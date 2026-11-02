@@ -1,0 +1,54 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Compilar APK
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+          cp app/build/outputs/apk/release/app-release.apk TVPlus.apk
+
+      - name: Publicar APK (release "latest")
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest -y --cleanup-tag || true
+          gh release create latest TVPlus.apk --title "TVPlus+ v1.0.${{ github.run_number }}" --notes "APK gerado automaticamente."
+
+      - name: Salvar log e APK no branch build-log
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/out && cd /tmp/out
+          git init -q -b build-log
+          cp $GITHUB_WORKSPACE/build.log . 2>/dev/null || echo "sem log" > build.log
+          tail -c 200000 build.log > build-tail.log
+          rm build.log
+          cp $GITHUB_WORKSPACE/TVPlus.apk . 2>/dev/null || true
+          echo "run=${{ github.run_number }} status=${{ job.status }} sha=${{ github.sha }}" > status.txt
+          git config user.email "bot@users.noreply.github.com"
+          git config user.name "build-bot"
+          git add -A && git commit -qm "build ${{ github.run_number }}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" build-log
