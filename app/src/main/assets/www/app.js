@@ -257,7 +257,7 @@
   function topBar(title, withSearch, placeholder) {
     return '<div class="top">' +
       '<button class="back focusable" data-k="back" id="btnBack">◀ Voltar</button>' +
-      '<img src="logo.jpg" alt="">' +
+      '<img src="logo.png" alt="">' +
       '<div class="title">' + esc(title) + "</div><div class=\"spacer\"></div>" +
       (withSearch ? '<input class="search focusable" data-k="search" id="search" placeholder="' + esc(placeholder || "Buscar...") + '">' : "") +
       '<div class="clock">' + clock() + "</div></div>";
@@ -273,7 +273,7 @@
       name: "login",
       render: function () {
         $app.innerHTML = '<div class="login"><div class="login-box">' +
-          '<img src="logo.jpg" alt="TVPlus+">' +
+          '<img src="logo.png" alt="TVPlus+">' +
           "<h2>Entre com seu usuário e senha</h2>" +
           '<input class="field focusable" data-k="u" id="lu" placeholder="Usuário" autocapitalize="off" autocomplete="off" spellcheck="false">' +
           '<input class="field focusable" data-k="p" id="lp" placeholder="Senha" type="password" autocomplete="off">' +
@@ -341,7 +341,7 @@
       render: function (back) {
         var a = account || {};
         $app.innerHTML = '<div class="home">' +
-          '<div class="htop"><img class="hlogo" src="logo.jpg" alt="TVPlus+">' +
+          '<div class="htop"><img class="hlogo" src="logo.png" alt="TVPlus+">' +
           '<div class="spacer"></div>' +
           '<div class="hinfo"><div>Olá, <b>' + esc(creds.user) + '</b></div><div>Vence: <b>' + esc(fmtDate(a.exp_date)) + "</b>" + (a.max_connections ? " • Telas: <b>" + esc(a.max_connections) + "</b>" : "") + "</div></div>" +
           '<div class="clock">' + clock() + "</div></div>" +
