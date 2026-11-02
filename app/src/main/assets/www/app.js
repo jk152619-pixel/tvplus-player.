@@ -175,7 +175,7 @@
     var r = cur.getBoundingClientRect();
     var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     var best = null, bestScore = Infinity;
-    var zoneSel = ".cats,.content,.detail,.top,.home-body,.login-box";
+    var zoneSel = ".cats,.content,.detail,.top,.login-box";
     var myZone = cur.closest ? cur.closest(zoneSel) : null;
     if (myZone && (dir === "up" || dir === "down") && !myZone.classList.contains("top")) {
       // Primeiro tenta ficar na mesma área (lista, menu lateral...)
@@ -317,36 +317,57 @@
   }
 
   // ---------------- início ----------------
+  var POPULAR = ["globo", "sbt", "record", "band", "redetv", "cultura", "sportv", "espn", "premiere", "combate", "tnt", "space", "hbo", "telecine", "megapix", "warner", "universal", "discovery", "cartoon", "disney", "gloob", "globonews", "cnn"];
+  function featuredChannels(all) {
+    var out = [], used = {};
+    for (var p = 0; p < POPULAR.length && out.length < 18; p++) {
+      for (var i = 0; i < all.length; i++) {
+        var it = all[i];
+        if (used[it.stream_id]) continue;
+        var n = norm(it.name).replace(/[^a-z0-9]/g, "");
+        if (n.indexOf(POPULAR[p]) === 0 || n.indexOf(POPULAR[p]) === 2) { out.push(it); used[it.stream_id] = 1; break; }
+      }
+    }
+    for (var j = 0; j < all.length && out.length < 12; j++) if (!used[all[j].stream_id]) { out.push(all[j]); used[all[j].stream_id] = 1; }
+    return out;
+  }
+  function recent(all, field, n) {
+    return all.slice().sort(function (a, b) { return (Number(b[field]) || 0) - (Number(a[field]) || 0); }).slice(0, n);
+  }
   function homeScreen() {
-    return {
+    var rows = {};
+    var screen = {
       name: "home",
       render: function (back) {
-        var self = this;
         var a = account || {};
-        $app.innerHTML = '<div class="home"><div class="top"><img src="logo.jpg" alt=""><div class="spacer"></div><div class="clock">' + clock() + "</div></div>" +
-          '<div class="home-body"><div class="tiles">' +
-          '<button class="tile live focusable" data-k="live"><div class="ico">📺</div><div><div class="lbl">TV AO VIVO</div><div class="sub">Canais</div></div></button>' +
-          '<button class="tile movies focusable" data-k="movies"><div class="ico">🎬</div><div><div class="lbl">FILMES</div><div class="sub">Catálogo completo</div></div></button>' +
-          '<button class="tile series focusable" data-k="series"><div class="ico">🍿</div><div><div class="lbl">SÉRIES</div><div class="sub">Temporadas e episódios</div></div></button>' +
+        $app.innerHTML = '<div class="home">' +
+          '<div class="htop"><img class="hlogo" src="logo.jpg" alt="TVPlus+">' +
+          '<div class="spacer"></div>' +
+          '<div class="hinfo"><div>Olá, <b>' + esc(creds.user) + '</b></div><div>Vence: <b>' + esc(fmtDate(a.exp_date)) + "</b>" + (a.max_connections ? " • Telas: <b>" + esc(a.max_connections) + "</b>" : "") + "</div></div>" +
+          '<div class="clock">' + clock() + "</div></div>" +
+          '<div class="home-body" id="hbody">' +
+          '<div class="menu">' +
+          '<button class="mtile live focusable" data-k="live"><span class="ico">📺</span><span class="lbl">TV ao Vivo</span></button>' +
+          '<button class="mtile movies focusable" data-k="movies"><span class="ico">🎬</span><span class="lbl">Filmes</span></button>' +
+          '<button class="mtile series focusable" data-k="series"><span class="ico">🍿</span><span class="lbl">Séries</span></button>' +
+          '<button class="mtile small focusable" data-k="refresh"><span class="ico">⟳</span><span class="lbl">Atualizar</span></button>' +
+          (C.whatsapp ? '<button class="mtile small focusable" data-k="support"><span class="ico">💬</span><span class="lbl">Suporte</span></button>' : "") +
+          '<button class="mtile small focusable" data-k="logout"><span class="ico">⏻</span><span class="lbl">Sair</span></button>' +
           "</div>" +
-          '<div class="home-actions">' +
-          '<button class="btn btn-dark focusable" data-k="refresh">⟳ Atualizar lista</button>' +
-          (C.whatsapp ? '<button class="btn btn-dark focusable" data-k="support">💬 Suporte</button>' : "") +
-          '<button class="btn btn-dark focusable" data-k="logout">⏻ Sair da conta</button>' +
-          "</div>" +
-          '<div class="account">Usuário: <b>' + esc(creds.user) + "</b> &nbsp;•&nbsp; Vencimento: <b>" + esc(fmtDate(a.exp_date)) + "</b>" +
-          (a.max_connections ? " &nbsp;•&nbsp; Telas: <b>" + esc(a.max_connections) + "</b>" : "") + "</div>" +
+          '<div class="rowtitle">📺 Canais em destaque</div><div class="row live-row" id="r-live"><div class="rowload">Carregando canais...</div></div>' +
+          '<div class="rowtitle">🎬 Filmes adicionados recentemente</div><div class="row" id="r-movie"><div class="rowload">Carregando filmes...</div></div>' +
+          '<div class="rowtitle">🍿 Séries atualizadas</div><div class="row" id="r-series"><div class="rowload">Carregando séries...</div></div>' +
           "</div></div>";
         var q = function (k) { return $app.querySelector('[data-k="' + k + '"]'); };
         q("live").onclick = function () { go(listScreen("live")); };
         q("movies").onclick = function () { go(listScreen("movie")); };
         q("series").onclick = function () { go(listScreen("series")); };
         q("refresh").onclick = function () {
-          cache = {};
+          cache = {}; rows = {};
           busy(true, "Atualizando...");
           tryLogin(creds.user, creds.pass).then(function (r) {
             busy(false); creds.dns = r.dns; account = r.info; save("creds", creds); save("account", account);
-            toast("Lista atualizada"); self.focusKey = "refresh"; self.render(true);
+            toast("Lista atualizada"); screen.focusKey = "refresh"; screen.render(true);
           }, function (e) { busy(false); toast(e.message); });
         };
         if (q("support")) q("support").onclick = function () { toast("Suporte no WhatsApp: " + fmtPhone(C.whatsapp), 6000); };
@@ -355,9 +376,58 @@
           stack = []; show(loginScreen());
           creds = null;
         };
-        if (back) restore(self, '[data-k="live"]'); else focusFirst('[data-k="live"]');
+        if (back) restore(screen, '[data-k="live"]'); else focusFirst('[data-k="live"]');
+        var wanted = back ? screen.focusKey : null;
+        function afterFill() {
+          if (wanted && document.activeElement && document.activeElement.getAttribute("data-k") !== wanted) {
+            var el = $app.querySelector('[data-k="' + wanted + '"]');
+            if (el) focusEl(el);
+          }
+        }
+        fillRow("live", function () { return api("get_live_streams").then(featuredChannels); }, afterFill);
+        fillRow("movie", function () { return api("get_vod_streams").then(function (l) { return recent(l, "added", 24); }); }, afterFill);
+        fillRow("series", function () { return api("get_series").then(function (l) { return recent(l, "last_modified", 24); }); }, afterFill);
       }
     };
+    function fillRow(type, loader, done) {
+      var p = rows[type] ? Promise.resolve(rows[type]) : loader();
+      p.then(function (items) {
+        rows[type] = items;
+        var box = document.getElementById("r-" + type);
+        if (!box || current !== screen) return;
+        if (!items || !items.length) { box.innerHTML = '<div class="rowload">Nada por aqui ainda.</div>'; return; }
+        var h = "";
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i];
+          if (type === "live") {
+            h += '<button class="hch focusable" data-k="h-l-' + esc(it.stream_id) + '" data-hi="' + i + '">' +
+              (it.stream_icon ? '<img loading="lazy" src="' + esc(it.stream_icon) + '" onerror="this.style.visibility=\'hidden\'">' : '<span class="noimg">📺</span>') +
+              '<span class="hname">' + esc(it.name) + "</span></button>";
+          } else {
+            var img = type === "movie" ? it.stream_icon : it.cover, id = type === "movie" ? it.stream_id : it.series_id;
+            h += '<button class="hcard focusable" data-k="h-' + type + "-" + esc(id) + '" data-hi="' + i + '">' +
+              '<div class="poster"' + (img ? ' style="background-image:url(\'' + esc(img).replace(/'/g, "%27") + '\')"' : "") + ">" + (img ? "" : "<span>🎬</span>") + "</div>" +
+              '<div class="cname">' + esc(it.name) + "</div></button>";
+          }
+        }
+        box.innerHTML = h;
+        var els = box.querySelectorAll("[data-hi]");
+        for (var j = 0; j < els.length; j++) els[j].onclick = function () {
+          var idx = +this.getAttribute("data-hi");
+          if (type === "live") {
+            var urls = [], titles = [], ext = liveExt();
+            for (var k = 0; k < items.length; k++) { urls.push(streamUrl("live", items[k].stream_id, ext)); titles.push(items[k].name); }
+            play(urls, titles, idx, true);
+          } else if (type === "movie") go(movieScreen(items[idx]));
+          else go(seriesScreen(items[idx]));
+        };
+        if (done) done();
+      }, function () {
+        var box = document.getElementById("r-" + type);
+        if (box) box.innerHTML = '<div class="rowload">Não foi possível carregar.</div>';
+      });
+    }
+    return screen;
   }
 
   // ---------------- listas (TV, filmes, séries) ----------------
