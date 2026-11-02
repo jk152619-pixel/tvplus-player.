@@ -445,7 +445,7 @@
       name: type,
       render: function (back) {
         $app.innerHTML = '<div class="screen">' + topBar(T.title, true, T.search) +
-          '<div class="main"><div class="cats" id="cats"></div><div class="content" id="content"><div class="empty">Carregando...</div></div></div></div>';
+          '<div class="main"><div class="side"><div class="cats" id="cats"></div><img class="wm" src="logo.png" alt=""></div><div class="content" id="content"><div class="empty">Carregando...</div></div></div></div>';
         bindBack();
         var s = document.getElementById("search");
         s.value = st.query;
@@ -468,12 +468,35 @@
       var h = "";
       for (var i = 0; i < st.cats.length; i++) {
         var c = st.cats[i];
-        h += '<button class="cat focusable' + (String(c.category_id) === String(st.cat) && !st.query ? " active" : "") + '" data-k="cat-' + esc(c.category_id) + '" data-c="' + esc(c.category_id) + '">' + esc(c.category_name) + "</button>";
+        var cnt = st.counts ? st.counts[String(c.category_id)] : null;
+        h += '<button class="cat focusable' + (String(c.category_id) === String(st.cat) && !st.query ? " active" : "") + '" data-k="cat-' + esc(c.category_id) + '" data-c="' + esc(c.category_id) + '">' +
+          '<span class="cn">' + esc(c.category_name) + '</span><span class="cnt" data-cnt="' + esc(c.category_id) + '">' + (cnt != null ? cnt : "") + "</span></button>";
       }
       var box = document.getElementById("cats");
       box.innerHTML = h;
       var btns = box.querySelectorAll(".cat");
       for (var j = 0; j < btns.length; j++) btns[j].onclick = function () { selectCat(this.getAttribute("data-c")); };
+      loadCounts();
+    }
+
+    function loadCounts() {
+      var f = favs(type), nf = 0;
+      for (var k in f) if (f.hasOwnProperty(k)) nf++;
+      if (st.counts) { st.counts.__fav = nf; fillCounts(); return; }
+      api(T.items).then(function (all) {
+        var c = { __all: all.length, __fav: nf };
+        for (var i = 0; i < all.length; i++) { var id = String(all[i].category_id); c[id] = (c[id] || 0) + 1; }
+        st.counts = c;
+        fillCounts();
+      }, function () {});
+    }
+
+    function fillCounts() {
+      var els = $app.querySelectorAll("[data-cnt]");
+      for (var i = 0; i < els.length; i++) {
+        var n = st.counts[els[i].getAttribute("data-cnt")];
+        els[i].textContent = n != null ? n : "0";
+      }
     }
 
     function loadItems(catId) {
