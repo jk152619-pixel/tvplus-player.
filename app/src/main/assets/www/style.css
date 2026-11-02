@@ -150,7 +150,7 @@ input { font: inherit; }
 .mtile:last-child { margin-right: 0; }
 .mtile:focus { transform: scale(1.05); }
 .rowtitle { flex-shrink: 0; font-size: 17px; font-weight: 800; padding: 16px 26px 8px; }
-.row { flex-shrink: 0; display: flex; overflow-x: auto; overflow-y: hidden; padding: 6px 26px 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.row { flex-shrink: 0; display: flex; overflow-x: auto; overflow-y: hidden; padding: 12px 26px 14px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .row::-webkit-scrollbar { display: none; }
 .rowload { color: var(--muted); font-size: 14px; padding: 18px 0; }
 .hch { flex: 0 0 150px; height: 104px; margin-right: 12px; border-radius: 12px; background: var(--panel); border: 1px solid #22232a; cursor: pointer;

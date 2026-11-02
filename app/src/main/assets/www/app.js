@@ -140,23 +140,23 @@
     for (var i = 0; i < all.length; i++) if (all[i].offsetParent !== null) out.push(all[i]);
     return out;
   }
-  function scrollParent(el) {
-    var p = el.parentElement;
+  function ensureVisible(el) {
+    // Rola todas as áreas (vertical e horizontal) até o item ficar visível
+    var p = el.parentElement, m = 24;
     while (p && p !== document.body) {
       var s = getComputedStyle(p);
-      if (/(auto|scroll)/.test(s.overflowY + s.overflowX) && (p.scrollHeight > p.clientHeight || p.scrollWidth > p.clientWidth)) return p;
+      if (/(auto|scroll)/.test(s.overflowY) && p.scrollHeight > p.clientHeight) {
+        var r = el.getBoundingClientRect(), pr = p.getBoundingClientRect();
+        if (r.top < pr.top + m) p.scrollTop -= (pr.top + m - r.top);
+        else if (r.bottom > pr.bottom - m) p.scrollTop += (r.bottom - pr.bottom + m);
+      }
+      if (/(auto|scroll)/.test(s.overflowX) && p.scrollWidth > p.clientWidth) {
+        var r2 = el.getBoundingClientRect(), pr2 = p.getBoundingClientRect();
+        if (r2.left < pr2.left + m) p.scrollLeft -= (pr2.left + m - r2.left);
+        else if (r2.right > pr2.right - m) p.scrollLeft += (r2.right - pr2.right + m);
+      }
       p = p.parentElement;
     }
-    return null;
-  }
-  function ensureVisible(el) {
-    var p = scrollParent(el);
-    if (!p) return;
-    var r = el.getBoundingClientRect(), pr = p.getBoundingClientRect(), m = 24;
-    if (r.top < pr.top + m) p.scrollTop -= (pr.top + m - r.top);
-    else if (r.bottom > pr.bottom - m) p.scrollTop += (r.bottom - pr.bottom + m);
-    if (r.left < pr.left + m) p.scrollLeft -= (pr.left + m - r.left);
-    else if (r.right > pr.right - m) p.scrollLeft += (r.right - pr.right + m);
   }
   function focusEl(el) {
     if (!el) return;
