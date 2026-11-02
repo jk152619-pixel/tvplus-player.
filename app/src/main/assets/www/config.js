@@ -4,7 +4,8 @@ window.APP_CONFIG = {
   name: "TVPlus+",
   dns: [
     "http://yt19.org",
-    "http://wempy.online:8080"
+    "http://wempy.online:8080",
+    "http://levi25.biz"
   ],
   // WhatsApp de suporte (com DDI 55 + DDD). Deixe "" para esconder.
   whatsapp: "5583991485424"
