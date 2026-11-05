@@ -13,7 +13,9 @@ import android.os.Looper
 import android.os.SystemClock
 import android.text.TextUtils
 import android.util.TypedValue
+import android.view.GestureDetector
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -55,6 +57,12 @@ class PlayerActivity : Activity() {
     private lateinit var listView: ListView
     private lateinit var loading: ProgressBar
     private lateinit var numberView: TextView
+    private lateinit var seekPanel: LinearLayout
+    private lateinit var seekText: TextView
+    private lateinit var seekTime: TextView
+    private lateinit var seekBar: ProgressBar
+    private var seekTarget = -1L
+    private var seekDelta = 0L
     private val handler = Handler(Looper.getMainLooper())
 
     private val urls = ArrayList<String>()
@@ -92,6 +100,8 @@ class PlayerActivity : Activity() {
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(http))
             .setLoadControl(loadControl)
+            .setSeekBackIncrementMs(10000)
+            .setSeekForwardIncrementMs(10000)
             .build()
         view.player = player
         player.addListener(object : Player.Listener {
@@ -145,9 +155,27 @@ class PlayerActivity : Activity() {
         view.setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
         view.useController = !live
         view.controllerShowTimeoutMs = 4000
+        view.controllerAutoShow = false   // os controles somem sozinhos, mesmo pausado
+        view.setShowFastForwardButton(true)
+        view.setShowRewindButton(true)
         view.setShowNextButton(false)
         view.setShowPreviousButton(false)
         root.addView(view, FrameLayout.LayoutParams(-1, -1))
+
+        // Celular: dois toques na esquerda volta 10s, na direita adianta 10s
+        if (!live) {
+            val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    val w = view.width
+                    when {
+                        e.x < w * 0.4f -> { seekBy(-10000); return true }
+                        e.x > w * 0.6f -> { seekBy(10000); return true }
+                    }
+                    return false
+                }
+            })
+            view.setOnTouchListener { _, ev -> gd.onTouchEvent(ev) }
+        }
 
         // Tocar na tela (TV ao vivo) mostra/esconde as barras
         if (live) {
@@ -239,6 +267,34 @@ class PlayerActivity : Activity() {
         root.addView(numberView, nlp)
         numberView.visibility = View.GONE
 
+        // Aviso de adiantar / voltar
+        seekPanel = LinearLayout(this)
+        seekPanel.orientation = LinearLayout.VERTICAL
+        seekPanel.gravity = Gravity.CENTER_HORIZONTAL
+        seekPanel.setPadding(dp(26), dp(14), dp(26), dp(16))
+        val sbg = GradientDrawable()
+        sbg.cornerRadius = dp(16).toFloat()
+        sbg.setColor(0xD9000000.toInt())
+        seekPanel.background = sbg
+        seekText = TextView(this)
+        seekText.setTextColor(GOLD)
+        seekText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
+        seekText.setTypeface(seekText.typeface, Typeface.BOLD)
+        seekText.gravity = Gravity.CENTER
+        seekPanel.addView(seekText)
+        seekTime = TextView(this)
+        seekTime.setTextColor(Color.WHITE)
+        seekTime.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        seekTime.gravity = Gravity.CENTER
+        seekTime.setPadding(0, dp(2), 0, dp(8))
+        seekPanel.addView(seekTime)
+        seekBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        seekBar.max = 1000
+        seekBar.progressTintList = android.content.res.ColorStateList.valueOf(GOLD)
+        seekPanel.addView(seekBar, LinearLayout.LayoutParams(dp(300), dp(8)))
+        root.addView(seekPanel, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        seekPanel.visibility = View.GONE
+
         bottomBar.visibility = View.GONE
         topBar.visibility = View.GONE
         if (!live) {
@@ -298,7 +354,7 @@ class PlayerActivity : Activity() {
 
     private fun scheduleHide() {
         handler.removeCallbacksAndMessages("hide")
-        if (live) handler.postAtTime({ hideBars() }, "hide", SystemClock.uptimeMillis() + 5000)
+        if (live) handler.postAtTime({ hideBars() }, "hide", SystemClock.uptimeMillis() + 4000)
     }
 
     private fun openList() {
@@ -335,6 +391,51 @@ class PlayerActivity : Activity() {
             if (pos > 10000) player.seekTo(pos)
         }
         player.playWhenReady = true
+    }
+
+    // ------------------------------------------------------------ adiantar / voltar
+    private fun fmt(ms: Long): String {
+        val t = maxOf(0L, ms) / 1000
+        val h = t / 3600; val m = (t % 3600) / 60; val s = t % 60
+        return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%02d:%02d", m, s)
+    }
+
+    /** Soma o pulo e só aplica quando a pessoa para de apertar (mais leve para IPTV). */
+    private fun seekBy(delta: Long) {
+        if (live || !::player.isInitialized) return
+        val dur = player.duration
+        if (seekTarget < 0) { seekTarget = player.currentPosition; seekDelta = 0 }
+        var target = seekTarget + delta
+        if (target < 0) target = 0
+        if (dur > 0 && target > dur - 3000) target = maxOf(0L, dur - 3000)
+        seekDelta += target - seekTarget
+        seekTarget = target
+        val secs = Math.abs(seekDelta) / 1000
+        val amount = if (secs >= 60) "${secs / 60} min${if (secs % 60 > 0) " ${secs % 60}s" else ""}" else "${secs}s"
+        seekText.text = if (seekDelta >= 0) "⏩  +$amount" else "⏪  -$amount"
+        seekTime.text = if (dur > 0) "${fmt(target)}  /  ${fmt(dur)}" else fmt(target)
+        seekBar.progress = if (dur > 0) ((target * 1000) / dur).toInt() else 0
+        seekPanel.visibility = View.VISIBLE
+        handler.removeCallbacksAndMessages("seek")
+        handler.postAtTime({ applySeek() }, "seek", SystemClock.uptimeMillis() + 650)
+    }
+
+    private fun applySeek() {
+        if (seekTarget >= 0) {
+            player.seekTo(seekTarget)
+            player.playWhenReady = true
+        }
+        seekTarget = -1
+        seekDelta = 0
+        handler.removeCallbacksAndMessages("seekhide")
+        handler.postAtTime({ seekPanel.visibility = View.GONE }, "seekhide", SystemClock.uptimeMillis() + 900)
+    }
+
+    /** Segurando a seta, o pulo vai aumentando: 10s, depois 30s, depois 1 min. */
+    private fun stepFor(repeat: Int): Long = when {
+        repeat < 6 -> 10000L
+        repeat < 20 -> 30000L
+        else -> 60000L
     }
 
     private fun changeChannel(delta: Int) {
@@ -408,6 +509,37 @@ class PlayerActivity : Activity() {
 
         // Filmes e séries
         if (down && code == KeyEvent.KEYCODE_MENU) { cycleResize(); return true }
+        when (code) {
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (down) seekBy(30000); return true }
+            KeyEvent.KEYCODE_MEDIA_REWIND -> { if (down) seekBy(-30000); return true }
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                if (down && event.repeatCount == 0) {
+                    player.playWhenReady = if (code == KeyEvent.KEYCODE_MEDIA_PLAY) true else if (code == KeyEvent.KEYCODE_MEDIA_PAUSE) false else !player.playWhenReady
+                    view.showController()
+                }
+                return true
+            }
+        }
+        // Setas para os lados adiantam/voltam (menos quando está nos botões de cima)
+        if (topBar.findFocus() == null && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+            if (down) {
+                val step = stepFor(event.repeatCount)
+                seekBy(if (code == KeyEvent.KEYCODE_DPAD_RIGHT) step else -step)
+            }
+            return true
+        }
+        // OK do controle: pausa / continua e mostra a barra
+        if (topBar.findFocus() == null && (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER)) {
+            if (down && event.repeatCount == 0) {
+                if (!view.isControllerFullyVisible) {
+                    view.showController()
+                } else {
+                    player.playWhenReady = !player.playWhenReady
+                    view.showController()
+                }
+            }
+            return true
+        }
         if (topBar.findFocus() != null) {
             if (down && code == KeyEvent.KEYCODE_DPAD_DOWN) {
                 view.showController()
