@@ -134,6 +134,105 @@
     return !!f[id];
   }
 
+  // ---------------- conteúdo adulto (bloqueio com senha) ----------------
+  var DEFAULT_PIN = "0000";
+  var adultUnlocked = false; // libera até fechar o app
+  var ADULT_RE = /(adult|xxx|\+\s?18|18\s?\+|\bhot\b|erot|porn|sexy|\bsexo\b|playboy|brasileirinhas|\bprive\b)/;
+  function getPin() { return String(load("adult_pin", DEFAULT_PIN) || DEFAULT_PIN); }
+  function isAdultCat(c) { return !!c && ADULT_RE.test(norm(c.category_name)); }
+  var adultMaps = {};
+  function adultMap(type) {
+    if (adultMaps[type]) return Promise.resolve(adultMaps[type]);
+    return api(TYPES[type].cats).then(function (cats) {
+      var m = {};
+      if (Array.isArray(cats)) for (var i = 0; i < cats.length; i++) if (isAdultCat(cats[i])) m[String(cats[i].category_id)] = true;
+      adultMaps[type] = m;
+      return m;
+    }, function () { return {}; });
+  }
+  function isAdultItem(it, map) {
+    return !!it && (String(it.is_adult) === "1" || !!map[String(it.category_id)]);
+  }
+  function hideAdult(type, items) {
+    if (adultUnlocked || !Array.isArray(items)) return Promise.resolve(items);
+    return adultMap(type).then(function (map) {
+      var out = [];
+      for (var i = 0; i < items.length; i++) if (!isAdultItem(items[i], map)) out.push(items[i]);
+      return out;
+    });
+  }
+  /** Pede a senha; se acertar, libera o conteúdo adulto e chama ok(). */
+  function askPin(ok) {
+    if (adultUnlocked) { ok(); return; }
+    go(pinScreen(function () { adultUnlocked = true; window.appBack(); ok(); }));
+  }
+  function pinScreen(onOk) {
+    return {
+      name: "pin",
+      render: function () {
+        $app.innerHTML = '<div class="login"><div class="login-box">' +
+          '<img src="logo.png" alt="TVPlus+">' +
+          "<h2>🔒 Conteúdo adulto</h2>" +
+          '<div class="msg" style="color:#ccc">Digite a senha para liberar</div>' +
+          '<input class="field focusable" data-k="pin" id="pin" placeholder="Senha" type="password" inputmode="numeric" autocomplete="off">' +
+          '<button class="btn btn-gold focusable" data-k="ok" id="pok">LIBERAR</button>' +
+          '<button class="btn btn-dark focusable" data-k="cancel" id="pcancel" style="margin-top:10px">Cancelar</button>' +
+          '<div class="msg" id="pmsg"></div>' +
+          "</div></div>";
+        var p = document.getElementById("pin");
+        function submit() {
+          if (p.value.trim() === getPin()) onOk();
+          else { document.getElementById("pmsg").textContent = "Senha incorreta"; p.value = ""; focusEl(p); }
+        }
+        p.onenter = submit;
+        document.getElementById("pok").onclick = submit;
+        document.getElementById("pcancel").onclick = function () { window.appBack(); };
+        focusFirst("#pin");
+      }
+    };
+  }
+
+  // ---------------- configurações ----------------
+  function settingsScreen() {
+    return {
+      name: "settings",
+      render: function () {
+        $app.innerHTML = '<div class="login"><div class="login-box">' +
+          '<img src="logo.png" alt="TVPlus+">' +
+          "<h2>⚙ Configurações</h2>" +
+          '<div class="msg" style="color:#ccc">Senha do conteúdo adulto (padrão: ' + DEFAULT_PIN + ")</div>" +
+          '<input class="field focusable" data-k="old" id="sold" placeholder="Senha atual" type="password" inputmode="numeric" autocomplete="off">' +
+          '<input class="field focusable" data-k="new" id="snew" placeholder="Nova senha (4 a 8 números)" type="password" inputmode="numeric" autocomplete="off">' +
+          '<input class="field focusable" data-k="new2" id="snew2" placeholder="Repita a nova senha" type="password" inputmode="numeric" autocomplete="off">' +
+          '<button class="btn btn-gold focusable" data-k="save" id="ssave">SALVAR SENHA</button>' +
+          (adultUnlocked ? '<button class="btn btn-dark focusable" data-k="lock" id="slock" style="margin-top:10px">🔒 Bloquear adulto agora</button>' : "") +
+          '<button class="btn btn-dark focusable" data-k="back" id="sback" style="margin-top:10px">◀ Voltar</button>' +
+          '<div class="msg" id="smsg"></div>' +
+          "</div></div>";
+        var o = document.getElementById("sold"), n = document.getElementById("snew"), n2 = document.getElementById("snew2");
+        var msg = document.getElementById("smsg");
+        o.onenter = function () { focusEl(n); };
+        n.onenter = function () { focusEl(n2); };
+        n2.onenter = submit;
+        function submit() {
+          var a = o.value.trim(), b = n.value.trim(), c = n2.value.trim();
+          if (a !== getPin()) { msg.textContent = "Senha atual incorreta"; o.value = ""; focusEl(o); return; }
+          if (!/^\d{4,8}$/.test(b)) { msg.textContent = "A nova senha deve ter de 4 a 8 números"; focusEl(n); return; }
+          if (b !== c) { msg.textContent = "As senhas não são iguais"; n2.value = ""; focusEl(n2); return; }
+          save("adult_pin", b);
+          o.value = n.value = n2.value = "";
+          toast("✔ Senha alterada");
+          window.appBack();
+        }
+        document.getElementById("ssave").onclick = submit;
+        var l = document.getElementById("slock");
+        if (l) l.onclick = function () { adultUnlocked = false; toast("🔒 Conteúdo adulto bloqueado"); window.appBack(); };
+        document.getElementById("sback").onclick = function () { window.appBack(); };
+        focusFirst("#sold");
+      }
+    };
+  }
+
   // ---------------- navegação por controle ----------------
   function focusables() {
     var all = $app.querySelectorAll(".focusable"), out = [];
@@ -350,6 +449,7 @@
           '<button class="mtile live focusable" data-k="live"><span class="ico">📺</span><span class="lbl">TV ao Vivo</span></button>' +
           '<button class="mtile movies focusable" data-k="movies"><span class="ico">🎬</span><span class="lbl">Filmes</span></button>' +
           '<button class="mtile series focusable" data-k="series"><span class="ico">🍿</span><span class="lbl">Séries</span></button>' +
+          '<button class="mtile small focusable" data-k="settings"><span class="ico">⚙</span><span class="lbl">Config.</span></button>' +
           '<button class="mtile small focusable" data-k="refresh"><span class="ico">⟳</span><span class="lbl">Atualizar</span></button>' +
           (C.whatsapp ? '<button class="mtile small focusable" data-k="support"><span class="ico">💬</span><span class="lbl">Suporte</span></button>' : "") +
           '<button class="mtile small focusable" data-k="logout"><span class="ico">⏻</span><span class="lbl">Sair</span></button>' +
@@ -370,6 +470,7 @@
             toast("Lista atualizada"); screen.focusKey = "refresh"; screen.render(true);
           }, function (e) { busy(false); toast(e.message); });
         };
+        q("settings").onclick = function () { go(settingsScreen()); };
         if (q("support")) q("support").onclick = function () { toast("Suporte no WhatsApp: " + fmtPhone(C.whatsapp), 6000); };
         q("logout").onclick = function () {
           creds = { user: creds.user }; save("creds", null); save("account", null); account = null; cache = {};
@@ -384,9 +485,9 @@
             if (el) focusEl(el);
           }
         }
-        fillRow("live", function () { return api("get_live_streams").then(featuredChannels); }, afterFill);
-        fillRow("movie", function () { return api("get_vod_streams").then(function (l) { return recent(l, "added", 24); }); }, afterFill);
-        fillRow("series", function () { return api("get_series").then(function (l) { return recent(l, "last_modified", 24); }); }, afterFill);
+        fillRow("live", function () { return api("get_live_streams").then(function (l) { return hideAdult("live", l); }).then(featuredChannels); }, afterFill);
+        fillRow("movie", function () { return api("get_vod_streams").then(function (l) { return hideAdult("movie", l); }).then(function (l) { return recent(l, "added", 24); }); }, afterFill);
+        fillRow("series", function () { return api("get_series").then(function (l) { return hideAdult("series", l); }).then(function (l) { return recent(l, "last_modified", 24); }); }, afterFill);
       }
     };
     function fillRow(type, loader, done) {
@@ -458,7 +559,8 @@
           busy(false);
           st.cats = [{ category_id: "__fav", category_name: "★ Favoritos" }, { category_id: "__all", category_name: "Todos" }].concat(Array.isArray(cats) ? cats : []);
           drawCats();
-          var first = st.cats.length > 2 ? st.cats[2].category_id : "__all";
+          var first = "__all";
+          for (var fc = 2; fc < st.cats.length; fc++) if (!isAdultCat(st.cats[fc])) { first = st.cats[fc].category_id; break; }
           selectCat(first, true);
         }, function (e) { busy(false); document.getElementById("content").innerHTML = '<div class="empty">Erro ao carregar: ' + esc(e.message) + "</div>"; focusFirst("#btnBack"); });
       }
@@ -470,7 +572,7 @@
         var c = st.cats[i];
         var cnt = st.counts ? st.counts[String(c.category_id)] : null;
         h += '<button class="cat focusable' + (String(c.category_id) === String(st.cat) && !st.query ? " active" : "") + '" data-k="cat-' + esc(c.category_id) + '" data-c="' + esc(c.category_id) + '">' +
-          '<span class="cn">' + esc(c.category_name) + '</span><span class="cnt" data-cnt="' + esc(c.category_id) + '">' + (cnt != null ? cnt : "") + "</span></button>";
+          '<span class="cn">' + (isAdultCat(c) && !adultUnlocked ? "🔒 " : "") + esc(c.category_name) + '</span><span class="cnt" data-cnt="' + esc(c.category_id) + '">' + (cnt != null ? cnt : "") + "</span></button>";
       }
       var box = document.getElementById("cats");
       box.innerHTML = h;
@@ -503,13 +605,21 @@
       if (catId === "__fav") {
         var f = favs(type), arr = [];
         for (var k in f) if (f.hasOwnProperty(k)) arr.push(f[k]);
-        return Promise.resolve(arr);
+        return hideAdult(type, arr);
       }
-      if (catId === "__all") return api(T.items);
+      if (catId === "__all") return api(T.items).then(function (l) { return hideAdult(type, l); });
       return api(T.items, "&category_id=" + encodeURIComponent(catId));
     }
 
     function selectCat(catId, keepFocusOnCats) {
+      if (!adultUnlocked && st.cats) {
+        for (var ac = 0; ac < st.cats.length; ac++) {
+          if (String(st.cats[ac].category_id) === String(catId) && isAdultCat(st.cats[ac])) {
+            askPin(function () { drawCats(); selectCat(catId); });
+            return;
+          }
+        }
+      }
       st.cat = catId; st.query = ""; st.limit = PAGE;
       var s = document.getElementById("search"); if (s) s.value = "";
       var act = $app.querySelectorAll(".cat");
@@ -533,7 +643,7 @@
       for (var i = 0; i < act.length; i++) act[i].classList.remove("active");
       if (!q) { selectCat(st.cat || "__all", true); return; }
       document.getElementById("content").innerHTML = '<div class="empty">Buscando...</div>';
-      api(T.items).then(function (all) {
+      api(T.items).then(function (l) { return hideAdult(type, l); }).then(function (all) {
         if (st.query !== q) return;
         var nq = norm(q), out = [];
         for (var i = 0; i < all.length; i++) if (norm(all[i].name).indexOf(nq) >= 0) out.push(all[i]);

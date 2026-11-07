@@ -72,6 +72,8 @@ class PlayerActivity : Activity() {
     private var triedAlt = false
     private var resizeMode = 0
     private var numberBuffer = ""
+    private var currentUri = ""
+    private var stallTries = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -107,7 +109,12 @@ class PlayerActivity : Activity() {
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
-                if (state == Player.STATE_READY) triedAlt = false
+                handler.removeCallbacksAndMessages("stall")
+                if (state == Player.STATE_BUFFERING) {
+                    // Se ficar girando muito tempo (comum depois de adiantar no IPTV), recarrega no mesmo ponto
+                    handler.postAtTime({ recoverStall() }, "stall", SystemClock.uptimeMillis() + 12000)
+                }
+                if (state == Player.STATE_READY) { triedAlt = false; stallTries = 0 }
                 if (state == Player.STATE_ENDED) {
                     if (live) {
                         playUri(urls[index], false)
@@ -384,12 +391,26 @@ class PlayerActivity : Activity() {
     }
 
     private fun playUri(url: String, resume: Boolean) {
+        currentUri = url
         player.setMediaItem(MediaItem.fromUri(Uri.parse(url)))
         player.prepare()
         if (resume && !live) {
             val pos = getPreferences(MODE_PRIVATE).getLong(urls[index], 0L)
             if (pos > 10000) player.seekTo(pos)
         }
+        player.playWhenReady = true
+    }
+
+    /** Destrava o vídeo que ficou carregando sem parar: recarrega o link e volta para o mesmo ponto. */
+    private fun recoverStall() {
+        if (!::player.isInitialized || player.playbackState != Player.STATE_BUFFERING) return
+        if (stallTries >= 3) return
+        stallTries++
+        val pos = if (live) 0L else player.currentPosition
+        player.stop()
+        player.setMediaItem(MediaItem.fromUri(Uri.parse(currentUri.ifEmpty { urls[index] })))
+        player.prepare()
+        if (!live && pos > 0) player.seekTo(pos)
         player.playWhenReady = true
     }
 
@@ -540,23 +561,40 @@ class PlayerActivity : Activity() {
             }
             return true
         }
+        // Botões de cima (Voltar / Tela): setas para os lados andam entre eles, seta para baixo volta ao vídeo
         if (topBar.findFocus() != null) {
-            if (down && code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                view.showController()
-                view.requestFocus()
+            if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (down) backToVideo()
                 return true
             }
+            if (code == KeyEvent.KEYCODE_DPAD_UP) return true
+            view.showController()
             return super.dispatchKeyEvent(event)
         }
-        if (down && code == KeyEvent.KEYCODE_DPAD_UP && view.isControllerFullyVisible) {
-            val focused = view.findFocus()
-            if (focused !is DefaultTimeBar) {
-                topBar.getChildAt(0)?.requestFocus()
-                return true
-            }
+        // Seta para baixo: só mostra a barra do tempo (não entra nos botões do player, que travava o controle)
+        if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+            if (down) backToVideo()
+            return true
         }
-        if (view.dispatchKeyEvent(event)) return true
+        // Seta para cima: mostra a barra e vai para o botão Voltar
+        if (code == KeyEvent.KEYCODE_DPAD_UP) {
+            if (down && event.repeatCount == 0) {
+                view.showController()
+                topBar.visibility = View.VISIBLE
+                topBar.getChildAt(0)?.requestFocus()
+            }
+            return true
+        }
         return super.dispatchKeyEvent(event)
+    }
+
+    /** Tira o foco dos botões e deixa o controle no vídeo (setas = adiantar/voltar, OK = pausar). */
+    private fun backToVideo() {
+        view.showController()
+        topBar.findFocus()?.clearFocus()
+        view.isFocusable = true
+        view.isFocusableInTouchMode = false
+        view.requestFocus()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
