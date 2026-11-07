@@ -210,3 +210,41 @@ body.phone .grid .card, body.phone .sres .card { width: auto; font-size: 12px; }
 .ep time { display: block; width: auto; font-size: 14px; color: var(--gold); margin-bottom: 2px; }
 .ep span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ep.now span { white-space: normal; }
+
+/* Filmes e Séries: capas menores, 6 por fileira na TV (cabem ~3 fileiras na tela) */
+.two .groups { width: 21%; max-width: 260px; min-width: 160px; }
+.two .gi { font-size: 18px; padding: 9px 16px; }
+.two .content { padding: 8px 12px; }
+.two .tabs { padding: 2px 2px 8px; margin-bottom: 4px; }
+.two .tab { font-size: 16px; padding: 6px 14px; }
+.grid .gridin, .sres .gridin { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px 10px; padding: 4px 4px 16px; }
+.grid .card, .sres .card { gap: 3px; font-size: 12px; }
+.grid .poster, .sres .poster { padding-top: 140%; border-radius: 5px; }
+.grid .card:focus, .sres .card:focus { transform: scale(1.08); }
+body.phone .grid .gridin, body.phone .sres .gridin { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+body.phone .two .groups { width: 150px; min-width: 0; }
+
+/* Atalhos das plataformas no Início: botões em 3D (brilho, relevo e sombra) */
+.plats { gap: 26px; padding: 18px 28px 24px; align-items: center; }
+.plat { position: relative; overflow: hidden; width: 100px; height: 100px; font-size: 15px; letter-spacing: .3px;
+  border: 3px solid rgba(255,255,255,.85);
+  box-shadow: 0 10px 18px rgba(0,0,0,.65), 0 3px 0 rgba(0,0,0,.35), inset 0 -10px 16px rgba(0,0,0,.45), inset 0 6px 10px rgba(255,255,255,.35);
+  text-shadow: 0 2px 3px rgba(0,0,0,.55); transition: transform .15s, box-shadow .15s, border-color .15s; }
+.plat::before { content: ""; position: absolute; left: 12%; right: 12%; top: 4%; height: 42%; border-radius: 50%;
+  background: linear-gradient(rgba(255,255,255,.55), rgba(255,255,255,0)); pointer-events: none; }
+.plat::after { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 50% 120%, rgba(0,0,0,.35), transparent 60%); }
+.plat span { position: relative; z-index: 1; }
+.p-netflix { background: radial-gradient(circle at 35% 30%, #3a3a3a, #0b0b0b 70%); color: #ff1f2c; }
+.p-prime { background: radial-gradient(circle at 35% 30%, #4cc4f0, #0f6f9e 75%); color: #fff; }
+.p-disney { background: radial-gradient(circle at 35% 30%, #3e6fd1, #0a1d4a 75%); color: #fff; }
+.p-hbo { background: radial-gradient(circle at 35% 30%, #8a5cff, #2a0f74 75%); color: #fff; }
+.p-globoplay { background: radial-gradient(circle at 35% 30%, #ff8a7a, #d81f3a 75%); color: #fff; }
+.p-paramount { background: radial-gradient(circle at 35% 30%, #4f95ff, #0838a8 75%); color: #fff; }
+.p-apple { background: radial-gradient(circle at 35% 30%, #5a5a62, #111114 75%); color: #fff; }
+.p-star { background: radial-gradient(circle at 35% 30%, #8b5ee0, #2c1260 75%); color: #fff; }
+.p-crunchy { background: radial-gradient(circle at 35% 30%, #ffb070, #e2560d 75%); color: #fff; }
+.p-discovery { background: radial-gradient(circle at 35% 30%, #5aa8ff, #0b4fa8 75%); color: #fff; }
+.plat:focus { transform: translateY(-8px) scale(1.16); border-color: var(--gold);
+  box-shadow: 0 18px 26px rgba(0,0,0,.7), 0 0 22px var(--gold), inset 0 -10px 16px rgba(0,0,0,.4), inset 0 6px 10px rgba(255,255,255,.45); }
+body.phone .plat { width: 72px; height: 72px; font-size: 11px; border-width: 2px; }
