@@ -33,7 +33,7 @@ class MainActivity : Activity() {
 
     companion object {
         /** Onde fica o APK novo (gerado automaticamente pelo GitHub a cada envio). */
-        private const val UPDATE_BASE = "https://github.com/plustv542/tvplus-player./releases/download/latest/"
+        private const val UPDATE_BASE = "https://github.com/jk152619-pixel/tvplus-player./releases/download/latest/"
         private const val REQ_UNKNOWN_SOURCES = 77
     }
 
