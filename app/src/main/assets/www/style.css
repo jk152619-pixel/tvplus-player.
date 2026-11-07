@@ -194,3 +194,19 @@ body.phone .sp-side { width: 150px; } body.phone .spc { height: 110px; font-size
 body.phone .gl { font-size: 15px; gap: 8px; } body.phone .tab { font-size: 16px; }
 body.phone .grid .gridin, body.phone .sres .gridin { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 12px 10px; }
 body.phone .grid .card, body.phone .sres .card { width: auto; font-size: 12px; } body.phone .grid .poster, body.phone .sres .poster { width: 100%; height: 0; }
+
+/* TV ao Vivo: colunas proporcionais para o guia (EPG) caber em qualquer tela */
+.three .groups { width: 23%; max-width: 290px; min-width: 170px; }
+.three .gi { font-size: 18px; padding: 10px 16px; }
+.three .chans { width: 34%; max-width: 440px; min-width: 220px; }
+.three .ch { font-size: 17px; padding: 7px 12px; gap: 10px; }
+.three .ch img, .three .ch i { width: 42px; height: 30px; }
+.three .ch .cn small { font-size: 13px; }
+.guide { padding: 14px 16px; min-width: 200px; }
+.gprev img { width: 70px; height: 50px; }
+.gprev b { font-size: 20px; } .gprev small { font-size: 13px; }
+.glist { overflow-y: auto; flex: 1; min-height: 0; }
+.ep { display: block; padding: 7px 0; font-size: 16px; }
+.ep time { display: block; width: auto; font-size: 14px; color: var(--gold); margin-bottom: 2px; }
+.ep span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep.now span { white-space: normal; }
