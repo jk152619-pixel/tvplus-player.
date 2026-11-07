@@ -656,14 +656,16 @@
         $app.innerHTML = frame("vod", '<div class="two"><div class="groups"></div><div class="content"><div class="tabs"></div><div class="grid"><div class="empty">Carregando...</div></div></div></div>');
         bindRail("vod");
         vodData().then(function (D) {
-          var groups = [["search", "Buscar"], ["dest", "Destaques"], ["movie", "Filmes"], ["series", "Séries"]];
+          var groups = [["search", "Buscar"], ["dest", "Destaques"], ["fav", "★ Favoritos"], ["movie", "Filmes"], ["series", "Séries"]];
           COLLS.forEach(function (p) { if (collCats(D, p[2]).length) groups.push([p[0], p[1]]); });
           var hasAdult = D.mc.some(catLocked) || D.sc.some(catLocked);
           if (hasAdult && lockOn()) groups.push(["adult", (adultUnlocked ? "" : "🔒 ") + "Adultos"]);
           function tabsFor(g) {
             if (g === "dest") return [
-              { l: "Novidades", f: function () { return interleave(wrap("series", recent(D.series, "last_modified", 40)), wrap("movie", recent(D.movies, "added", 40))); } },
-              { l: "Favoritos", f: function () { var a = favs("movie"), b = favs("series"); return wrap("movie", Object.keys(a).map(function (k) { return a[k]; })).concat(wrap("series", Object.keys(b).map(function (k) { return b[k]; }))); } }];
+              { l: "Séries", f: function () { return wrap("series", recent(D.series, "last_modified", 120)); } },
+              { l: "Filmes", f: function () { return wrap("movie", recent(D.movies, "added", 120)); } }];
+            if (g === "fav") return [
+              { l: "Favoritos", f: function () { var a = favs("movie"), b = favs("series"); return wrap("series", Object.keys(b).map(function (k) { return b[k]; })).concat(wrap("movie", Object.keys(a).map(function (k) { return a[k]; }))); } }];
             if (g === "movie") return [{ l: "Lançamentos", f: function () { return wrap("movie", recent(D.movies, "added", 80)); } }].concat(D.vmc.map(function (c) { return catTab("movie", c, D.movies); }));
             if (g === "series") return [{ l: "Novidades", f: function () { return wrap("series", recent(D.series, "last_modified", 80)); } }].concat(D.vsc.map(function (c) { return catTab("series", c, D.series); }));
             if (g === "adult") {
@@ -713,7 +715,7 @@
               var m = x.it, img = x.kind === "series" ? m.cover : m.stream_icon;
               h += '<button class="card focusable" data-k="c-' + x.kind[0] + (x.kind === "series" ? m.series_id : m.stream_id) + '" data-i="' + idx + '"><div class="poster"' + bg(img) + '></div><span>' + esc(m.name) + "</span></button>";
             });
-            into.innerHTML = '<div class="gridin">' + (h || '<div class="empty">' + (st.g === "dest" && st.t === 1 ? "Segure OK numa capa para favoritar" : "Nada por aqui") + "</div>") + "</div>";
+            into.innerHTML = '<div class="gridin">' + (h || '<div class="empty">' + (st.g === "fav" ? "Segure OK numa capa para favoritar" : "Nada por aqui") + "</div>") + "</div>";
             var c = into.querySelectorAll(".card");
             for (var k = 0; k < c.length; k++) {
               c[k].onclick = function () { var x = list[Number(this.getAttribute("data-i"))]; openItem(x.kind, x.it); };
@@ -791,7 +793,7 @@
   function sc(s) { return s == null ? "" : typeof s === "object" ? (s.displayValue != null ? s.displayValue : s.value) : s; }
   function teamOf(cp) {
     var t = (cp && cp.team) || {};
-    return { n: t.shortDisplayName || t.displayName || t.name || "?", logo: t.logo || (t.logos && t.logos[0] && t.logos[0].href) || "", s: sc(cp && cp.score) };
+    return { n: t.shortDisplayName || t.displayName || t.name || "?", f: (t.displayName || "") + " " + (t.shortDisplayName || "") + " " + (t.abbreviation || ""), logo: t.logo || (t.logos && t.logos[0] && t.logos[0].href) || "", s: sc(cp && cp.score) };
   }
   function leagueGames(lg, d1, d2) {
     return espn(ESPN + lg + "/scoreboard?limit=200&dates=" + d1 + (d2 ? "-" + d2 : "")).then(function (r) {
@@ -831,9 +833,62 @@
       stack = []; show(liveScreen(f ? f.category_id : "all"));
     }, function () { stack = []; show(liveScreen()); });
   }
-  function bindGames(box) {
+  // Canais que costumam passar cada liga no Brasil (usado quando a ESPN não informa a transmissão)
+  var LG_TV = {
+    "bra.1": ["premiere", "globo", "sportv", "caze", "record", "amazon", "prime"], "bra.2": ["premiere", "sportv", "band", "espn", "disney"],
+    "bra.copa_do_brazil": ["premiere", "sportv", "globo", "amazon", "prime"], "conmebol.libertadores": ["espn", "globo", "sportv", "paramount", "disney"],
+    "conmebol.sudamericana": ["espn", "paramount", "disney"], "uefa.champions": ["tnt", "hbo", "max", "space", "caze", "amazon", "prime", "sbt"],
+    "uefa.europa": ["espn", "disney", "tnt", "space"], "eng.1": ["espn", "disney"], "esp.1": ["espn", "disney"], "ita.1": ["espn", "disney"],
+    "ger.1": ["caze", "sportv", "onefootball"], "fra.1": ["caze", "espn", "disney"], "por.1": ["espn", "disney", "sportv"], "ksa.1": ["band", "caze", "sportv"], "usa.1": ["apple", "espn"]
+  };
+  var TV_ALIAS = { "disney+": "espn", "disney plus": "espn", "star+": "espn", "max": "tnt", "hbo max": "tnt", "amazon prime video": "prime", "prime video": "prime", "cazetv": "caze", "caze tv": "caze", "sportv": "sportv", "tv globo": "globo", "ge tv": "globo", "paramount+": "paramount" };
+  function tvKeys(g) {
+    var keys = [];
+    String(g.tv || "").split(/\s*,\s*/).forEach(function (n) {
+      n = norm(n).trim(); if (!n) return;
+      var k = TV_ALIAS[n] || n.replace(/\+/g, "").replace(/\s*(hd|fhd|4k)$/, "").replace(/\s*\d+$/, "").trim();
+      if (k && keys.indexOf(k) < 0) keys.push(k);
+    });
+    (LG_TV[g.lg] || []).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
+    return keys;
+  }
+  function teamWords(n) { return norm(n).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(function (w) { return w.length >= 4 && !/^(clube|futebol|club|sport|esporte|united|city|real|atletico)$/.test(w); }); }
+  function openGame(g) {
+    busy(true, "Procurando o canal do jogo...");
+    Promise.all([api("get_live_categories"), api("get_live_streams")]).then(function (r) {
+      busy(false);
+      var cats = arr(r[0]), all = visible(r[1], lockMap(cats)), sportCat = {};
+      cats.forEach(function (c) { if (/esport|sport|futebol|premiere|espn|combate|dazn|tnt|caze|jogos|evento|ppv/.test(norm(c.category_name))) sportCat[String(c.category_id)] = 1; });
+      var found = [], seen = {};
+      function add(c, score) { if (!seen[c.stream_id]) { seen[c.stream_id] = 1; found.push({ c: c, s: score }); } }
+      // 1º: canal de evento com o nome dos times (ex.: "Man City x Liverpool")
+      var hw = teamWords(g.home.f || g.home.n), aw = teamWords(g.away.f || g.away.n);
+      all.forEach(function (c) {
+        var n = norm(c.name), h = hw.some(function (w) { return n.indexOf(w) >= 0; }), a = aw.some(function (w) { return n.indexOf(w) >= 0; });
+        if (h && a) add(c, 0); else if ((h || a) && sportCat[String(c.category_id)]) add(c, 1);
+      });
+      // 2º: canal que transmite (ESPN, Premiere, TNT...)
+      tvKeys(g).forEach(function (k, ki) {
+        var kk = k.replace(/[^a-z0-9 ]/g, "").trim(); if (kk.length < 3) return;
+        var re = new RegExp("(^|[^a-z])" + kk + "($|[^a-z])");
+        all.forEach(function (c) {
+          var n = norm(c.name); if (!re.test(n)) return;
+          var q = /fhd|full ?hd|1080/.test(n) ? 0 : /\bhd\b/.test(n) ? 0.1 : /\bsd\b|alt|h265/.test(n) ? 0.4 : 0.2;
+          add(c, 10 + ki + q + (sportCat[String(c.category_id)] ? 0 : 0.5));
+        });
+      });
+      found.sort(function (x, y) { return x.s - y.s || String(x.c.name).localeCompare(String(y.c.name)); });
+      var list = found.slice(0, 40).map(function (x) { return x.c; });
+      if (!list.length) { toast("Canal do jogo não encontrado. Abrindo canais de esporte..."); openSportsChannels(); return; }
+      var c0 = list[0];
+      addHist({ k: "l" + c0.stream_id, type: "live", name: c0.name, img: c0.stream_icon, id: c0.stream_id });
+      play(list.map(function (c) { return streamUrl("live", c.stream_id, liveExt()); }), list.map(function (c) { return c.name; }), 0, true);
+      if (list.length > 1) setTimeout(function () { toast("Não é o jogo? Use ▲ ▼ no player para trocar de canal", 5000); }, 800);
+    }, function () { busy(false); openSportsChannels(); });
+  }
+  function bindGames(box, list) {
     var b = box.querySelectorAll(".game");
-    for (var i = 0; i < b.length; i++) b[i].onclick = openSportsChannels;
+    for (var i = 0; i < b.length; i++) b[i].onclick = function () { var g = list && list[Number(this.getAttribute("data-i"))]; if (g) openGame(g); else openSportsChannels(); };
   }
   var MAIN_LG = { "bra.1": 1, "bra.2": 1, "bra.copa_do_brazil": 1, "conmebol.libertadores": 1, "conmebol.sudamericana": 1, "uefa.champions": 1, "eng.1": 1, "esp.1": 1 };
   function sportScreen() {
@@ -841,7 +896,7 @@
       name: "sport",
       render: function (back) {
         var self = this;
-        $app.innerHTML = frame("sport", '<div class="sp-home"><div class="sp-top"><h2>Principais eventos</h2><span class="hint">OK num jogo abre os canais de esporte</span></div>' +
+        $app.innerHTML = frame("sport", '<div class="sp-home"><div class="sp-top"><h2>Principais eventos</h2><span class="hint">OK num jogo abre direto o canal que transmite</span></div>' +
           '<div class="sp-body"><div class="sp-main"><div class="empty">Carregando jogos de hoje...</div></div><div class="sp-side">' +
           '<button class="spc focusable" data-k="sp-cal" data-v="cal">' + ICON.cal + "<span>Calendário de eventos</span></button>" +
           '<button class="spc focusable" data-k="sp-lg" data-v="lg">' + ICON.trophy + "<span>Eventos da liga</span></button>" +
@@ -860,7 +915,7 @@
           var list = live.concat(top, rest).slice(0, 30);
           if (!document.body.contains(box)) return;
           box.innerHTML = list.length ? '<div class="gcol">' + list.map(function (g, i) { return gameHtml(g, i, true); }).join("") + "</div>" : '<div class="empty">Nenhum jogo das principais ligas hoje. Veja o Calendário de eventos.</div>';
-          bindGames(box);
+          bindGames(box, list);
           if (back) restore(self, ".spc");
         }, function () { box.innerHTML = '<div class="empty">Não foi possível carregar os jogos agora. Confira a internet e tente de novo.</div>'; });
         if (back) restore(self, ".spc"); else focusFirst(".spc");
@@ -887,7 +942,7 @@
           var p = cur.split("-");
           dayGames(new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 12)).then(function (all) {
             box.innerHTML = all.map(function (g, i) { return gameHtml(g, i, true); }).join("") || '<div class="empty">Nenhum jogo nesse dia</div>';
-            bindGames(box);
+            bindGames(box, all);
           }, function () { box.innerHTML = '<div class="empty">Não foi possível carregar os jogos agora</div>'; });
         }
         load2();
@@ -909,12 +964,19 @@
         function load2() {
           for (var i = 0; i < g.length; i++) g[i].classList.toggle("on", g[i].getAttribute("data-l") === cur);
           var box = $app.querySelector(".games"); box.innerHTML = '<div class="empty">Carregando...</div>';
-          var a = new Date(), b = new Date(); a.setDate(a.getDate() - 4); b.setDate(b.getDate() + 14);
-          leagueGames(cur, ymd8(a), ymd8(b)).then(function (all) {
+          var lg = cur, days = [];
+          for (var k = -4; k <= 12; k++) { var d = new Date(); d.setDate(d.getDate() + k); days.push(ymd8(d)); }
+          Promise.all(days.map(function (d) { return leagueGames(lg, d).catch(function () { return null; }); })).then(function (r) {
+            if (lg !== cur || !document.body.contains(box)) return;
+            var all = [], seen = {}, fails = 0;
+            r.forEach(function (x) { if (x === null) { fails++; return; } x.forEach(function (gm) { if (!seen[gm.id]) { seen[gm.id] = 1; all.push(gm); } }); });
+            if (fails === r.length) { box.innerHTML = '<div class="empty">Não foi possível carregar agora. Confira a internet e tente de novo.</div>'; return; }
             all.sort(function (x, y) { return x.t - y.t; });
-            box.innerHTML = all.map(function (gm, i) { return gameHtml(gm, i, false); }).join("") || '<div class="empty">Sem jogos nesses dias</div>';
-            bindGames(box);
-          }, function () { box.innerHTML = '<div class="empty">Não foi possível carregar agora</div>'; });
+            var h = "", lastDay = "";
+            all.forEach(function (gm, i) { var dl = dayLbl(gm.t.getTime() / 1000); if (dl !== lastDay) { h += '<div class="eday">' + esc(dl) + "</div>"; lastDay = dl; } h += gameHtml(gm, i, false); });
+            box.innerHTML = h || '<div class="empty">Sem jogos dessa liga nesses dias</div>';
+            bindGames(box, all);
+          });
         }
         load2();
         if (back) restore(self, ".gi.on"); else focusFirst(".gi");
