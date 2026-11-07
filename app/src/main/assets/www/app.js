@@ -214,19 +214,22 @@
         $app.innerHTML = '<div class="screen">' + topBar("Configurações", false) +
           '<div class="main"><div class="side"><div class="cats">' +
           '<button class="cat focusable" data-k="parental"><span class="cn">🔒 Controle dos pais</span></button>' +
-          '<button class="cat focusable" data-k="about"><span class="cn">ℹ Sobre o app</span></button>' +
+          '<button class="cat focusable" data-k="update"><span class="cn">⟳ Verificar atualização</span></button>' +
           '</div><img class="wm" src="logo.png" alt=""></div>' +
           '<div class="content"><div class="empty" style="text-align:left;line-height:1.7">' +
           "<b>🔒 Controle dos pais</b><br>Bloqueie com senha o conteúdo adulto ou qualquer categoria de canais, filmes e séries.<br><br>" +
           "Senha padrão: <b>" + DEFAULT_PIN + "</b> (troque dentro do Controle dos pais)<br><br>" +
-          "Versão do app: <b>" + esc(appVersion() || "—") + "</b>" +
+          "Versão do app: <b>" + esc(appVersion() || "—") + "</b><br>O app avisa sozinho quando tem versão nova." +
           (C.whatsapp ? "<br>Suporte: <b>" + esc(fmtPhone(C.whatsapp)) + "</b>" : "") +
           "</div></div></div></div>";
         bindBack();
         $app.querySelector('[data-k="parental"]').onclick = function () {
           askPin(function () { go(parentalScreen()); }, "Controle dos pais");
         };
-        $app.querySelector('[data-k="about"]').onclick = function () { toast("TVPlus+ " + appVersion(), 4000); };
+        $app.querySelector('[data-k="update"]').onclick = function () {
+          if (window.Native && window.Native.checkUpdate) { toast("Verificando atualização..."); window.Native.checkUpdate(); }
+          else toast("Disponível no app instalado");
+        };
         if (back) restore(screen, '[data-k="parental"]'); else focusFirst('[data-k="parental"]');
       }
     };

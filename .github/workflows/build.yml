@@ -30,13 +30,14 @@ jobs:
           set -o pipefail
           gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
           cp app/build/outputs/apk/release/app-release.apk TVPlus.apk
+          echo "${{ github.run_number }}" > version.txt
 
       - name: Publicar APK (release "latest")
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest TVPlus.apk --title "TVPlus+ v1.0.${{ github.run_number }}" --notes "APK gerado automaticamente."
+          gh release create latest TVPlus.apk version.txt --title "TVPlus+ v1.0.${{ github.run_number }}" --notes "APK gerado automaticamente."
 
       - name: Salvar log e APK no branch build-log
         if: always()
