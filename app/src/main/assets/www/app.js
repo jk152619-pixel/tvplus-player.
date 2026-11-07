@@ -504,27 +504,41 @@
           dots.innerHTML = slides.map(function (x, i) { return "<i" + (i === n ? ' class="on"' : "") + "></i>"; }).join("");
           $app.querySelector(".banner").onclick = function () { openItem(s.type, s.it); };
         }
+        function drawPlats(pl) {
+          var box = $app.querySelector(".plats"); if (!box) return;
+          box.innerHTML = pl.map(function (p) { return '<button class="plat focusable p-' + p[0] + '" data-k="pl-' + p[0] + '" data-g="' + p[0] + '"><span>' + esc(p[1]) + "</span></button>"; }).join("");
+          var b = box.querySelectorAll(".plat");
+          for (var i = 0; i < b.length; i++) b[i].onclick = function () { go(vodScreen(this.getAttribute("data-g"))); };
+        }
+        var hc = load("home_cache", null), started = false, tmr = 0;
+        function startSlides() {
+          if (!slides.length) { bs.textContent = "OK para abrir Filmes e Séries"; return; }
+          slide();
+          if (!started) { started = true; tmr = setInterval(function () { if (!document.body.contains(bimg)) clearInterval(tmr); else slide(); }, 7000); }
+        }
+        if (hc && hc.u === creds.user && hc.slides && hc.slides.length) {
+          slides = hc.slides; startSlides(); drawPlats(hc.plats || []);
+        }
         vodData().then(function (D) {
+          if (!document.body.contains(bimg)) return;
+          var fresh = [];
+          var old = slides; slides = fresh;
           recent(D.series, "last_modified", 40).forEach(function (s) {
             var bd = s.backdrop_path && s.backdrop_path[0];
             if (bd && slides.length < 8) slides.push({ img: bd, name: s.name, type: "series", it: s });
           });
           if (slides.length < 3) recent(D.movies, "added", 12).forEach(function (m) { if (m.stream_icon && slides.length < 8) slides.push({ img: m.stream_icon, name: m.name, type: "movie", it: m }); });
-          if (!slides.length) bs.textContent = "OK para abrir Filmes e Séries";
-          slide();
-          var t = setInterval(function () { if (!document.body.contains(bimg)) clearInterval(t); else slide(); }, 7000);
-          var h = "";
-          COLLS.forEach(function (p) {
-            if (!PLAT_IDS[p[0]] || !collCats(D, p[2]).length) return;
-            h += '<button class="plat focusable p-' + p[0] + '" data-k="pl-' + p[0] + '" data-g="' + p[0] + '"><span>' + esc(p[1]) + "</span></button>";
-          });
-          var box = $app.querySelector(".plats"); if (!box) return;
-          box.innerHTML = h;
-          var b = box.querySelectorAll(".plat");
-          for (var i = 0; i < b.length; i++) b[i].onclick = function () { go(vodScreen(this.getAttribute("data-g"))); };
+          var pl = [];
+          COLLS.forEach(function (p) { if (PLAT_IDS[p[0]] && collCats(D, p[2]).length) pl.push([p[0], p[1]]); });
+          var light = slides.map(function (x) { return { img: x.img, name: x.name, type: x.type, it: x.type === "series" ? { series_id: x.it.series_id, name: x.it.name, cover: x.it.cover, backdrop_path: x.it.backdrop_path, plot: x.it.plot, genre: x.it.genre, rating: x.it.rating, releaseDate: x.it.releaseDate } : x.it }; });
+          save("home_cache", { u: creds.user, slides: light, plats: pl });
+          if (!old.length) startSlides();
+          var a = document.activeElement, onPlat = a && a.classList && a.classList.contains("plat") ? a.getAttribute("data-g") : null;
+          drawPlats(pl);
+          if (onPlat) { var f = $app.querySelector('.plat[data-g="' + onPlat + '"]'); if (f) focusEl(f); }
           if (back) restore(self, ".banner");
         }, function () {});
-        $app.querySelector(".banner").onclick = function () { go(vodScreen()); };
+        if (!slides.length) $app.querySelector(".banner").onclick = function () { go(vodScreen()); };
         if (back) restore(self, ".banner"); else focusEl($app.querySelector(".banner"));
       }
     };
@@ -645,6 +659,7 @@
   document.addEventListener("keydown", function (e) { if ((e.keyCode === 13 || e.keyCode === 23) && !e.repeat) okDown = Date.now(); else if ((e.keyCode === 13 || e.keyCode === 23) && e.repeat && okDown && Date.now() - okDown > 700) { okDown = 0; var a = document.activeElement; if (a && a.oncontextmenu) a.oncontextmenu({ preventDefault: function () {} }); } }, true);
 
   // ---------- Filmes e Séries (grupos à esquerda, abas em cima, capas) ----------
+  function fmtN(n) { return String(n || 0).replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
   function interleave(a, b) { var o = [], n = Math.max(a.length, b.length); for (var i = 0; i < n; i++) { if (a[i]) o.push(a[i]); if (b[i]) o.push(b[i]); } return o; }
   function wrap(kind, list) { return list.map(function (it) { return { kind: kind, it: it }; }); }
   function vodScreen(group, tab) {
@@ -656,8 +671,17 @@
         $app.innerHTML = frame("vod", '<div class="two"><div class="groups"></div><div class="content"><div class="tabs"></div><div class="grid"><div class="empty">Carregando...</div></div></div></div>');
         bindRail("vod");
         vodData().then(function (D) {
-          var groups = [["search", "Buscar"], ["dest", "Destaques"], ["fav", "★ Favoritos"], ["movie", "Filmes"], ["series", "Séries"]];
-          COLLS.forEach(function (p) { if (collCats(D, p[2]).length) groups.push([p[0], p[1]]); });
+          var mCnt = {}, sCnt = {};
+          D.movies.forEach(function (m) { var k = String(m.category_id); mCnt[k] = (mCnt[k] || 0) + 1; });
+          D.series.forEach(function (m) { var k = String(m.category_id); sCnt[k] = (sCnt[k] || 0) + 1; });
+          function catCount(kind, c) { return ((kind === "series" ? sCnt : mCnt)[String(c.category_id)]) || 0; }
+          var nFav = Object.keys(favs("movie")).length + Object.keys(favs("series")).length;
+          var groups = [["search", "Buscar"], ["dest", "Destaques"], ["fav", "★ Favoritos", nFav], ["movie", "Filmes", D.movies.length], ["series", "Séries", D.series.length]];
+          COLLS.forEach(function (p) {
+            var cc = collCats(D, p[2]); if (!cc.length) return;
+            var n = 0; cc.forEach(function (x) { n += catCount(x.kind, x.c); });
+            groups.push([p[0], p[1], n]);
+          });
           var hasAdult = D.mc.some(catLocked) || D.sc.some(catLocked);
           if (hasAdult && lockOn()) groups.push(["adult", (adultUnlocked ? "" : "🔒 ") + "Adultos"]);
           function tabsFor(g) {
@@ -679,10 +703,10 @@
             return [];
           }
           function catTab(kind, c, list) {
-            return { l: c.category_name, f: function () { return wrap(kind, list.filter(function (m) { return String(m.category_id) === String(c.category_id); })); } };
+            return { l: c.category_name + " (" + fmtN(catCount(kind, c)) + ")", f: function () { return wrap(kind, list.filter(function (m) { return String(m.category_id) === String(c.category_id); })); } };
           }
           var gb = $app.querySelector(".groups");
-          gb.innerHTML = groups.map(function (x) { return '<button class="gi focusable" data-k="vg-' + x[0] + '" data-g="' + x[0] + '">' + (x[0] === "search" ? ICON.search + " " : "") + esc(x[1]) + "</button>"; }).join("");
+          gb.innerHTML = groups.map(function (x) { return '<button class="gi focusable" data-k="vg-' + x[0] + '" data-g="' + x[0] + '">' + (x[0] === "search" ? ICON.search + " " : "") + '<span class="gn">' + esc(x[1]) + "</span>" + (x[2] != null ? '<small class="cnt">' + fmtN(x[2]) + "</small>" : "") + "</button>"; }).join("");
           var gi = gb.querySelectorAll(".gi");
           for (var i = 0; i < gi.length; i++) gi[i].onclick = function () {
             var v = this.getAttribute("data-g");

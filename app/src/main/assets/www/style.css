@@ -248,3 +248,8 @@ body.phone .two .groups { width: 150px; min-width: 0; }
 .plat:focus { transform: translateY(-8px) scale(1.16); border-color: var(--gold);
   box-shadow: 0 18px 26px rgba(0,0,0,.7), 0 0 22px var(--gold), inset 0 -10px 16px rgba(0,0,0,.4), inset 0 6px 10px rgba(255,255,255,.45); }
 body.phone .plat { width: 72px; height: 72px; font-size: 11px; border-width: 2px; }
+
+/* quantidade de conteúdo ao lado do nome do grupo */
+.gi .gn { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gi .cnt { margin-left: auto; flex: none; font-size: 13px; font-weight: 700; color: var(--gold); background: rgba(0,0,0,.35); padding: 2px 8px; border-radius: 10px; }
+.gi:focus .cnt { color: #fff; background: var(--red); } .gi.on .cnt { color: #15161b; background: var(--gold); }
