@@ -10,7 +10,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.jkproducoes.tvplus"
+        applicationId = "com.jkproducoes.tvplusp2p"
         minSdk = 21
         targetSdk = 34
         versionCode = buildNumber
