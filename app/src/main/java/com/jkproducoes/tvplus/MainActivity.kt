@@ -30,6 +30,8 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private var pendingApk: File? = null
     private var updating = false
+    private var asking = false
+    private var lastCheck = 0L
 
     companion object {
         /** Onde fica o APK novo (gerado automaticamente pelo GitHub a cada envio). */
@@ -62,6 +64,12 @@ class MainActivity : Activity() {
         Handler(Looper.getMainLooper()).postDelayed({ checkUpdate(false) }, 4000)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Voltou para o app (saiu e entrou de novo): confere se tem versão nova
+        if (lastCheck > 0 && System.currentTimeMillis() - lastCheck > 10 * 60 * 1000) checkUpdate(false)
+    }
+
     // ------------------------------------------------------------ atualização automática
     private fun localVersion(): Long = try {
         val pi = packageManager.getPackageInfo(packageName, 0)
@@ -91,7 +99,8 @@ class MainActivity : Activity() {
     }
 
     private fun checkUpdate(manual: Boolean) {
-        if (updating) return
+        if (updating || asking) return
+        lastCheck = System.currentTimeMillis()
         Thread {
             var remote = -1L
             try {
@@ -100,7 +109,7 @@ class MainActivity : Activity() {
                 c.disconnect()
             } catch (_: Throwable) {}
             runOnUiThread {
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || asking || updating) return@runOnUiThread
                 when {
                     remote > localVersion() -> askUpdate(remote)
                     manual && remote < 0 -> Toast.makeText(this, "Não foi possível verificar agora. Tente mais tarde.", Toast.LENGTH_LONG).show()
@@ -111,11 +120,13 @@ class MainActivity : Activity() {
     }
 
     private fun askUpdate(remote: Long) {
+        asking = true
         val d = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("Atualização disponível")
             .setMessage("Tem uma versão nova do TVPlus+ (1.0.$remote).\nSeu login e seus favoritos continuam salvos.")
             .setPositiveButton("ATUALIZAR AGORA") { _, _ -> downloadUpdate() }
             .setNegativeButton("Depois", null)
+            .setOnDismissListener { asking = false }
             .create()
         d.show()
         d.getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()
