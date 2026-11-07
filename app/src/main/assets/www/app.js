@@ -139,13 +139,23 @@
   var adultUnlocked = false; // libera até fechar o app
   var ADULT_RE = /(adult|xxx|\+\s?18|18\s?\+|\bhot\b|erot|porn|sexy|\bsexo\b|playboy|brasileirinhas|\bprive\b)/;
   function getPin() { return String(load("adult_pin", DEFAULT_PIN) || DEFAULT_PIN); }
-  function isAdultCat(c) { return !!c && ADULT_RE.test(norm(c.category_name)); }
-  var adultMaps = {};
+  function lockOn() { return load("adult_on", true) !== false; }
+  function customLocks() { return load("adult_custom", {}) || {}; }
+  /** Categoria bloqueada? Primeiro vale a escolha feita no Controle dos pais; senão, detecta pelo nome. */
+  function catLocked(type, c) {
+    if (!c || String(c.category_id).indexOf("__") === 0) return false;
+    var cu = customLocks()[type] || {}, id = String(c.category_id);
+    if (cu.hasOwnProperty(id)) return !!cu[id];
+    return ADULT_RE.test(norm(c.category_name));
+  }
+  function isLockedCat(type, c) { return lockOn() && !adultUnlocked && catLocked(type, c); }
+  var adultMaps = {}, homeRows = {};
+  function resetAdult() { adultMaps = {}; homeRows = {}; }
   function adultMap(type) {
     if (adultMaps[type]) return Promise.resolve(adultMaps[type]);
     return api(TYPES[type].cats).then(function (cats) {
       var m = {};
-      if (Array.isArray(cats)) for (var i = 0; i < cats.length; i++) if (isAdultCat(cats[i])) m[String(cats[i].category_id)] = true;
+      if (Array.isArray(cats)) for (var i = 0; i < cats.length; i++) if (catLocked(type, cats[i])) m[String(cats[i].category_id)] = true;
       adultMaps[type] = m;
       return m;
     }, function () { return {}; });
@@ -154,7 +164,7 @@
     return !!it && (String(it.is_adult) === "1" || !!map[String(it.category_id)]);
   }
   function hideAdult(type, items) {
-    if (adultUnlocked || !Array.isArray(items)) return Promise.resolve(items);
+    if (adultUnlocked || !lockOn() || !Array.isArray(items)) return Promise.resolve(items);
     return adultMap(type).then(function (map) {
       var out = [];
       for (var i = 0; i < items.length; i++) if (!isAdultItem(items[i], map)) out.push(items[i]);
@@ -162,18 +172,18 @@
     });
   }
   /** Pede a senha; se acertar, libera o conteúdo adulto e chama ok(). */
-  function askPin(ok) {
+  function askPin(ok, title) {
     if (adultUnlocked) { ok(); return; }
-    go(pinScreen(function () { adultUnlocked = true; window.appBack(); ok(); }));
+    go(pinScreen(function () { adultUnlocked = true; resetAdult(); window.appBack(); ok(); }, title));
   }
-  function pinScreen(onOk) {
+  function pinScreen(onOk, title) {
     return {
       name: "pin",
       render: function () {
         $app.innerHTML = '<div class="login"><div class="login-box">' +
           '<img src="logo.png" alt="TVPlus+">' +
-          "<h2>🔒 Conteúdo adulto</h2>" +
-          '<div class="msg" style="color:#ccc">Digite a senha para liberar</div>' +
+          "<h2>🔒 " + esc(title || "Conteúdo bloqueado") + "</h2>" +
+          '<div class="msg" style="color:#ccc">Digite a senha do Controle dos pais</div>' +
           '<input class="field focusable" data-k="pin" id="pin" placeholder="Senha" type="password" inputmode="numeric" autocomplete="off">' +
           '<button class="btn btn-gold focusable" data-k="ok" id="pok">LIBERAR</button>' +
           '<button class="btn btn-dark focusable" data-k="cancel" id="pcancel" style="margin-top:10px">Cancelar</button>' +
@@ -192,45 +202,120 @@
     };
   }
 
-  // ---------------- configurações ----------------
+  // ---------------- configurações / controle dos pais ----------------
+  function appVersion() {
+    try { if (window.Native && window.Native.version) return "v" + window.Native.version(); } catch (e) {}
+    return "";
+  }
   function settingsScreen() {
-    return {
+    var screen = {
       name: "settings",
-      render: function () {
-        $app.innerHTML = '<div class="login"><div class="login-box">' +
-          '<img src="logo.png" alt="TVPlus+">' +
-          "<h2>⚙ Configurações</h2>" +
-          '<div class="msg" style="color:#ccc">Senha do conteúdo adulto (padrão: ' + DEFAULT_PIN + ")</div>" +
-          '<input class="field focusable" data-k="old" id="sold" placeholder="Senha atual" type="password" inputmode="numeric" autocomplete="off">' +
-          '<input class="field focusable" data-k="new" id="snew" placeholder="Nova senha (4 a 8 números)" type="password" inputmode="numeric" autocomplete="off">' +
-          '<input class="field focusable" data-k="new2" id="snew2" placeholder="Repita a nova senha" type="password" inputmode="numeric" autocomplete="off">' +
-          '<button class="btn btn-gold focusable" data-k="save" id="ssave">SALVAR SENHA</button>' +
-          (adultUnlocked ? '<button class="btn btn-dark focusable" data-k="lock" id="slock" style="margin-top:10px">🔒 Bloquear adulto agora</button>' : "") +
-          '<button class="btn btn-dark focusable" data-k="back" id="sback" style="margin-top:10px">◀ Voltar</button>' +
-          '<div class="msg" id="smsg"></div>' +
-          "</div></div>";
-        var o = document.getElementById("sold"), n = document.getElementById("snew"), n2 = document.getElementById("snew2");
-        var msg = document.getElementById("smsg");
-        o.onenter = function () { focusEl(n); };
-        n.onenter = function () { focusEl(n2); };
-        n2.onenter = submit;
-        function submit() {
-          var a = o.value.trim(), b = n.value.trim(), c = n2.value.trim();
-          if (a !== getPin()) { msg.textContent = "Senha atual incorreta"; o.value = ""; focusEl(o); return; }
-          if (!/^\d{4,8}$/.test(b)) { msg.textContent = "A nova senha deve ter de 4 a 8 números"; focusEl(n); return; }
-          if (b !== c) { msg.textContent = "As senhas não são iguais"; n2.value = ""; focusEl(n2); return; }
-          save("adult_pin", b);
-          o.value = n.value = n2.value = "";
-          toast("✔ Senha alterada");
-          window.appBack();
-        }
-        document.getElementById("ssave").onclick = submit;
-        var l = document.getElementById("slock");
-        if (l) l.onclick = function () { adultUnlocked = false; toast("🔒 Conteúdo adulto bloqueado"); window.appBack(); };
-        document.getElementById("sback").onclick = function () { window.appBack(); };
-        focusFirst("#sold");
+      render: function (back) {
+        $app.innerHTML = '<div class="screen">' + topBar("Configurações", false) +
+          '<div class="main"><div class="side"><div class="cats">' +
+          '<button class="cat focusable" data-k="parental"><span class="cn">🔒 Controle dos pais</span></button>' +
+          '<button class="cat focusable" data-k="about"><span class="cn">ℹ Sobre o app</span></button>' +
+          '</div><img class="wm" src="logo.png" alt=""></div>' +
+          '<div class="content"><div class="empty" style="text-align:left;line-height:1.7">' +
+          "<b>🔒 Controle dos pais</b><br>Bloqueie com senha o conteúdo adulto ou qualquer categoria de canais, filmes e séries.<br><br>" +
+          "Senha padrão: <b>" + DEFAULT_PIN + "</b> (troque dentro do Controle dos pais)<br><br>" +
+          "Versão do app: <b>" + esc(appVersion() || "—") + "</b>" +
+          (C.whatsapp ? "<br>Suporte: <b>" + esc(fmtPhone(C.whatsapp)) + "</b>" : "") +
+          "</div></div></div></div>";
+        bindBack();
+        $app.querySelector('[data-k="parental"]').onclick = function () {
+          askPin(function () { go(parentalScreen()); }, "Controle dos pais");
+        };
+        $app.querySelector('[data-k="about"]').onclick = function () { toast("TVPlus+ " + appVersion(), 4000); };
+        if (back) restore(screen, '[data-k="parental"]'); else focusFirst('[data-k="parental"]');
       }
     };
+    return screen;
+  }
+
+  function parentalScreen() {
+    var tab = "status", cats = {};
+    var screen = {
+      name: "parental",
+      render: function (back) {
+        var tabs = [["status", "🔒 Bloqueio"], ["pin", "🔑 Trocar senha"], ["live", "📺 Canais"], ["movie", "🎬 Filmes"], ["series", "🍿 Séries"]];
+        var h = '<div class="screen">' + topBar("Controle dos pais", false) + '<div class="main"><div class="side"><div class="cats">';
+        for (var i = 0; i < tabs.length; i++) h += '<button class="cat focusable' + (tabs[i][0] === tab ? " active" : "") + '" data-k="t-' + tabs[i][0] + '" data-t="' + tabs[i][0] + '"><span class="cn">' + tabs[i][1] + "</span></button>";
+        h += '</div><img class="wm" src="logo.png" alt=""></div><div class="content" id="pcontent"></div></div></div>';
+        $app.innerHTML = h;
+        bindBack();
+        var ts = $app.querySelectorAll("[data-t]");
+        for (var j = 0; j < ts.length; j++) ts[j].onclick = function () {
+          tab = this.getAttribute("data-t");
+          var a = $app.querySelectorAll("[data-t]");
+          for (var x = 0; x < a.length; x++) a[x].classList.toggle("active", a[x].getAttribute("data-t") === tab);
+          drawTab(true);
+        };
+        drawTab(false);
+        if (back) restore(screen, ".cat.active"); else focusFirst(".cat.active");
+      }
+    };
+    function row(k, label, right, extra) {
+      return '<button class="chan focusable" data-k="' + k + '"' + (extra || "") + '><span class="name">' + label + '</span><span class="fav" style="font-weight:800">' + right + "</span></button>";
+    }
+    function drawTab(focusContent) {
+      var box = document.getElementById("pcontent");
+      if (tab === "status") {
+        box.innerHTML = '<div class="list">' +
+          row("onoff", "Bloqueio do conteúdo adulto", lockOn() ? "✅ LIGADO" : "❌ DESLIGADO") +
+          (adultUnlocked ? row("relock", "Liberado agora — toque para bloquear de novo", "🔒") : "") +
+          '</div><div class="empty" style="text-align:left;line-height:1.6;font-size:14px">Com o bloqueio ligado, as categorias marcadas com 🔒 só abrem com a senha e ficam escondidas da busca, de "Todos" e da tela inicial. Escolha as categorias nas abas Canais, Filmes e Séries.</div>';
+        box.querySelector('[data-k="onoff"]').onclick = function () {
+          save("adult_on", !lockOn()); resetAdult();
+          toast(lockOn() ? "🔒 Bloqueio ligado" : "Bloqueio desligado");
+          drawTab(true);
+        };
+        var rl = box.querySelector('[data-k="relock"]');
+        if (rl) rl.onclick = function () { adultUnlocked = false; resetAdult(); toast("🔒 Bloqueado"); window.appBack(); };
+      } else if (tab === "pin") {
+        box.innerHTML = '<div class="login-box" style="margin:10px auto;max-width:420px">' +
+          '<input class="field focusable" data-k="np1" id="np1" placeholder="Nova senha (4 a 8 números)" type="password" inputmode="numeric" autocomplete="off">' +
+          '<input class="field focusable" data-k="np2" id="np2" placeholder="Repita a nova senha" type="password" inputmode="numeric" autocomplete="off">' +
+          '<button class="btn btn-gold focusable" data-k="npsave" id="npsave">SALVAR SENHA</button>' +
+          '<div class="msg" id="npmsg"></div></div>';
+        var a = document.getElementById("np1"), b = document.getElementById("np2"), m = document.getElementById("npmsg");
+        var sub = function () {
+          if (!/^\d{4,8}$/.test(a.value.trim())) { m.textContent = "A senha deve ter de 4 a 8 números"; focusEl(a); return; }
+          if (a.value.trim() !== b.value.trim()) { m.textContent = "As senhas não são iguais"; b.value = ""; focusEl(b); return; }
+          save("adult_pin", a.value.trim()); a.value = b.value = "";
+          m.textContent = ""; toast("✔ Senha alterada");
+        };
+        a.onenter = function () { focusEl(b); }; b.onenter = sub;
+        document.getElementById("npsave").onclick = sub;
+      } else {
+        var type = tab;
+        var drawCats = function () {
+          if (tab !== type) return;
+          var list = cats[type] || [];
+          if (!list.length) { box.innerHTML = '<div class="empty">Nenhuma categoria.</div>'; return; }
+          var h = '<div class="empty" style="text-align:left;padding:4px 4px 10px;font-size:14px">Toque na categoria para bloquear 🔒 ou liberar 🔓</div><div class="list">';
+          for (var i = 0; i < list.length; i++) h += row("pc-" + esc(list[i].category_id), esc(list[i].category_name), catLocked(type, list[i]) ? "🔒 Bloqueada" : "🔓 Livre", ' data-pc="' + i + '"');
+          box.innerHTML = h + "</div>";
+          var els = box.querySelectorAll("[data-pc]");
+          for (var j = 0; j < els.length; j++) els[j].onclick = function () {
+            var c = list[+this.getAttribute("data-pc")];
+            var all = customLocks(); all[type] = all[type] || {};
+            all[type][String(c.category_id)] = !catLocked(type, c);
+            save("adult_custom", all); resetAdult();
+            this.querySelector(".fav").textContent = catLocked(type, c) ? "🔒 Bloqueada" : "🔓 Livre";
+          };
+        };
+        if (!cats[type]) {
+          box.innerHTML = '<div class="empty">Carregando categorias...</div>';
+          api(TYPES[type].cats).then(function (l) { cats[type] = Array.isArray(l) ? l : []; drawCats(); if (focusContent && tab === type) focusFirst("#pcontent .focusable"); },
+            function (e) { box.innerHTML = '<div class="empty">Erro ao carregar: ' + esc(e.message) + "</div>"; });
+          return;
+        }
+        drawCats();
+      }
+      if (focusContent) focusFirst("#pcontent .focusable");
+    }
+    return screen;
   }
 
   // ---------------- navegação por controle ----------------
@@ -434,7 +519,6 @@
     return all.slice().sort(function (a, b) { return (Number(b[field]) || 0) - (Number(a[field]) || 0); }).slice(0, n);
   }
   function homeScreen() {
-    var rows = {};
     var screen = {
       name: "home",
       render: function (back) {
@@ -442,14 +526,14 @@
         $app.innerHTML = '<div class="home">' +
           '<div class="htop"><img class="hlogo" src="logo.png" alt="TVPlus+">' +
           '<div class="spacer"></div>' +
-          '<div class="hinfo"><div>Olá, <b>' + esc(creds.user) + '</b></div><div>Vence: <b>' + esc(fmtDate(a.exp_date)) + "</b>" + (a.max_connections ? " • Telas: <b>" + esc(a.max_connections) + "</b>" : "") + "</div></div>" +
+          '<div class="hinfo"><div>Olá, <b>' + esc(creds.user) + '</b></div><div>Vence: <b>' + esc(fmtDate(a.exp_date)) + "</b>" + (a.max_connections ? " • Telas: <b>" + esc(a.max_connections) + "</b>" : "") + (appVersion() ? ' • <span style="opacity:.6">' + esc(appVersion()) + "</span>" : "") + "</div></div>" +
           '<div class="clock">' + clock() + "</div></div>" +
           '<div class="home-body" id="hbody">' +
           '<div class="menu">' +
           '<button class="mtile live focusable" data-k="live"><span class="ico">📺</span><span class="lbl">TV ao Vivo</span></button>' +
           '<button class="mtile movies focusable" data-k="movies"><span class="ico">🎬</span><span class="lbl">Filmes</span></button>' +
           '<button class="mtile series focusable" data-k="series"><span class="ico">🍿</span><span class="lbl">Séries</span></button>' +
-          '<button class="mtile small focusable" data-k="settings"><span class="ico">⚙</span><span class="lbl">Config.</span></button>' +
+          '<button class="mtile small focusable" data-k="settings"><span class="ico">⚙</span><span class="lbl">Configurações</span></button>' +
           '<button class="mtile small focusable" data-k="refresh"><span class="ico">⟳</span><span class="lbl">Atualizar</span></button>' +
           (C.whatsapp ? '<button class="mtile small focusable" data-k="support"><span class="ico">💬</span><span class="lbl">Suporte</span></button>' : "") +
           '<button class="mtile small focusable" data-k="logout"><span class="ico">⏻</span><span class="lbl">Sair</span></button>' +
@@ -463,7 +547,7 @@
         q("movies").onclick = function () { go(listScreen("movie")); };
         q("series").onclick = function () { go(listScreen("series")); };
         q("refresh").onclick = function () {
-          cache = {}; rows = {};
+          cache = {}; resetAdult();
           busy(true, "Atualizando...");
           tryLogin(creds.user, creds.pass).then(function (r) {
             busy(false); creds.dns = r.dns; account = r.info; save("creds", creds); save("account", account);
@@ -491,9 +575,9 @@
       }
     };
     function fillRow(type, loader, done) {
-      var p = rows[type] ? Promise.resolve(rows[type]) : loader();
+      var p = homeRows[type] ? Promise.resolve(homeRows[type]) : loader();
       p.then(function (items) {
-        rows[type] = items;
+        homeRows[type] = items;
         var box = document.getElementById("r-" + type);
         if (!box || current !== screen) return;
         if (!items || !items.length) { box.innerHTML = '<div class="rowload">Nada por aqui ainda.</div>'; return; }
@@ -560,7 +644,7 @@
           st.cats = [{ category_id: "__fav", category_name: "★ Favoritos" }, { category_id: "__all", category_name: "Todos" }].concat(Array.isArray(cats) ? cats : []);
           drawCats();
           var first = "__all";
-          for (var fc = 2; fc < st.cats.length; fc++) if (!isAdultCat(st.cats[fc])) { first = st.cats[fc].category_id; break; }
+          for (var fc = 2; fc < st.cats.length; fc++) if (!isLockedCat(type, st.cats[fc])) { first = st.cats[fc].category_id; break; }
           selectCat(first, true);
         }, function (e) { busy(false); document.getElementById("content").innerHTML = '<div class="empty">Erro ao carregar: ' + esc(e.message) + "</div>"; focusFirst("#btnBack"); });
       }
@@ -572,7 +656,7 @@
         var c = st.cats[i];
         var cnt = st.counts ? st.counts[String(c.category_id)] : null;
         h += '<button class="cat focusable' + (String(c.category_id) === String(st.cat) && !st.query ? " active" : "") + '" data-k="cat-' + esc(c.category_id) + '" data-c="' + esc(c.category_id) + '">' +
-          '<span class="cn">' + (isAdultCat(c) && !adultUnlocked ? "🔒 " : "") + esc(c.category_name) + '</span><span class="cnt" data-cnt="' + esc(c.category_id) + '">' + (cnt != null ? cnt : "") + "</span></button>";
+          '<span class="cn">' + (isLockedCat(type, c) ? "🔒 " : "") + esc(c.category_name) + '</span><span class="cnt" data-cnt="' + esc(c.category_id) + '">' + (cnt != null ? cnt : "") + "</span></button>";
       }
       var box = document.getElementById("cats");
       box.innerHTML = h;
@@ -612,10 +696,10 @@
     }
 
     function selectCat(catId, keepFocusOnCats) {
-      if (!adultUnlocked && st.cats) {
+      if (st.cats) {
         for (var ac = 0; ac < st.cats.length; ac++) {
-          if (String(st.cats[ac].category_id) === String(catId) && isAdultCat(st.cats[ac])) {
-            askPin(function () { drawCats(); selectCat(catId); });
+          if (String(st.cats[ac].category_id) === String(catId) && isLockedCat(type, st.cats[ac])) {
+            askPin(function () { drawCats(); selectCat(catId); }, st.cats[ac].category_name);
             return;
           }
         }

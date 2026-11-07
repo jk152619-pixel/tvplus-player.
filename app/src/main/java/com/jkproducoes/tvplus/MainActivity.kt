@@ -104,5 +104,11 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun isApp(): Boolean = true
+
+        @JavascriptInterface
+        fun version(): String = try {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        } catch (e: Exception) { "" }
     }
 }
