@@ -529,8 +529,9 @@
         $app.innerHTML = frame("home",
           '<div class="hhead"><img class="hlogo" src="logo.png" alt=""><span>' + ICON.user + " " + esc(creds.user) + '</span><span>' + ICON.calsm + " " + esc(fmtDate(account && account.exp_date)) + '</span><span class="clock">' + clock() + "</span></div>" +
           '<button class="banner focusable" data-k="banner"><div class="bimg"></div><div class="btxt"><b>TVPlus+</b><small>Carregando destaques...</small></div><div class="dots"></div></button>' +
-          '<div class="plats"></div>');
+          '<div class="plats"></div>' + payFoot());
         bindRail("home");
+        var pf = $app.querySelector(".payfoot"); if (pf) pf.onclick = function () { go(pixScreen()); };
         var slides = [], si = 0;
         var bimg = $app.querySelector(".bimg"), bt = $app.querySelector(".btxt b"), bs = $app.querySelector(".btxt small"), dots = $app.querySelector(".dots");
         function slide() {
@@ -773,13 +774,13 @@
             var h = "";
             list.slice(0, 300).forEach(function (x, idx) {
               var m = x.it, img = x.kind === "series" ? m.cover : m.stream_icon;
-              h += '<button class="card focusable" data-k="c-' + x.kind[0] + (x.kind === "series" ? m.series_id : m.stream_id) + '" data-i="' + idx + '"><div class="poster"' + bg(img) + '></div><span>' + esc(m.name) + "</span></button>";
+              h += '<button class="card focusable" data-k="c-' + x.kind[0] + (x.kind === "series" ? m.series_id : m.stream_id) + '" data-i="' + idx + '"><div class="poster"' + bg(img) + '>' + (isFav(x.kind, x.kind === "series" ? m.series_id : m.stream_id) ? '<i class="fstar">★</i>' : "") + '</div><span>' + esc(m.name) + "</span></button>";
             });
             into.innerHTML = '<div class="gridin">' + (h || '<div class="empty">' + (st.g === "fav" ? "Segure OK numa capa para favoritar" : "Nada por aqui") + "</div>") + "</div>";
             var c = into.querySelectorAll(".card");
             for (var k = 0; k < c.length; k++) {
               c[k].onclick = function () { var x = list[Number(this.getAttribute("data-i"))]; openItem(x.kind, x.it); };
-              c[k].oncontextmenu = (function (x) { return function (e) { e.preventDefault(); toggleFav(x.kind, x.it, x.kind === "series" ? x.it.series_id : x.it.stream_id); }; })(list[k]);
+              c[k].oncontextmenu = (function (x, el) { return function (e) { e.preventDefault(); var on = toggleFav(x.kind, x.it, x.kind === "series" ? x.it.series_id : x.it.stream_id); var p = el.querySelector(".poster"), st = p && p.querySelector(".fstar"); if (on && p && !st) p.insertAdjacentHTML("beforeend", '<i class="fstar">★</i>'); else if (!on && st) st.remove(); }; })(list[k], c[k]);
             }
           }
           draw();
@@ -1117,6 +1118,7 @@
         var ver = ""; try { if (window.Native && window.Native.version) ver = window.Native.version(); } catch (e) {}
         $app.innerHTML = frame("set", '<div class="content full set"><div class="sethead"><img src="logo.png" alt=""><h2>Configurações</h2></div>' +
           '<div class="info"><p>Usuário: <b>' + esc(creds.user) + "</b></p><p>Vencimento: <b>" + esc(fmtDate(account && account.exp_date)) + "</b></p><p>Telas: <b>" + esc((account && account.max_connections) || "1") + "</b></p>" + (ver ? "<p>Versão do app: <b>" + esc(ver) + "</b></p>" : "") + "</div>" +
+          '<button class="sbtn pixbtn focusable" data-k="a-pix" data-a="pix">💳 Pagamento Pix · Renovar plano</button>' +
           '<button class="sbtn focusable" data-k="a-dev" data-a="dev">Tipo de dispositivo: ' + (device === "phone" ? "Celular" : "TV") + "</button>" +
           '<button class="sbtn focusable" data-k="a-adult" data-a="adult">🔒 Conteúdo adulto: ' + (lockOn() ? "bloqueado" : "liberado") + "</button>" +
           '<button class="sbtn focusable" data-k="a-pin" data-a="pin">Trocar senha do controle dos pais</button>' +
@@ -1129,7 +1131,8 @@
         var b = $app.querySelectorAll(".sbtn");
         for (var i = 0; i < b.length; i++) b[i].onclick = function () {
           var a = this.getAttribute("data-a");
-          if (a === "dev") show(deviceScreen(function () { show(setScreen()); }));
+          if (a === "pix") go(pixScreen());
+          else if (a === "dev") show(deviceScreen(function () { show(setScreen()); }));
           else if (a === "adult") askPin(function () { save("adult_on", !lockOn()); if (lockOn()) adultUnlocked = false; cache = {}; }, "Controle dos pais");
           else if (a === "pin") askPin(function () { setTimeout(function () { go(newPinScreen()); }, 0); }, "Controle dos pais");
           else if (a === "hist") { history = []; save("hist", []); toast("Histórico limpo"); }
@@ -1138,6 +1141,73 @@
           else if (a === "out") { save("account", null); account = null; cache = {}; epgCache = {}; adultUnlocked = false; stack = []; show(loginScreen()); }
         };
         if (back) restore(self, ".sbtn"); else focusFirst(".sbtn");
+      }
+    };
+  }
+
+  // ---------- Pagamento Pix ----------
+  var PIX = {
+    chave: "83921531864", chaveFmt: "(83) 92153-1864", tipo: "Celular", banco: "Mercado Pago", nome: "João Carlos Martins",
+    codigo: "00020126360014br.gov.bcb.pix0114+55839215318645204000053039865802BR5919JOAO CARLOS MARTINS6011JOAO PESSOA62070503***6304CACE",
+    planos: [
+      { n: "Mensal", t: 1, p: "1 mês", v: "35,00", m: "35,00" },
+      { n: "Mensal 2 telas", t: 2, p: "1 mês", v: "50,00", m: "50,00" },
+      { n: "Trimestral", t: 1, p: "3 meses", v: "90,00", m: "30,00" },
+      { n: "Semestral", t: 1, p: "6 meses", v: "165,00", m: "27,50" },
+      { n: "Anual", t: 1, p: "12 meses", v: "300,00", m: "25,00", best: true }
+    ]
+  };
+  function daysLeft() {
+    var ts = account && account.exp_date; if (!ts || ts === "null") return null;
+    return Math.ceil((Number(ts) * 1000 - Date.now()) / 86400000);
+  }
+  function payFoot() {
+    var d = daysLeft();
+    if (d !== null && d <= 5) {
+      var t = d < 0 ? "Seu plano venceu" : d === 0 ? "Seu plano vence hoje" : d === 1 ? "Seu plano vence amanhã" : "Seu plano vence em " + d + " dias";
+      return '<button class="payfoot warn focusable" data-k="payfoot">⚠️ ' + t + ". Pague pelo Pix em Configurações › Pagamento</button>";
+    }
+    return '<button class="payfoot focusable" data-k="payfoot">💳 Renove pelo Pix: vá em Configurações › Pagamento</button>';
+  }
+  function copyText(t) {
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(function () { toast("Código Pix copiado! Cole no app do seu banco"); }, function () { copyOld(t); }); return; } } catch (e) {}
+    copyOld(t);
+  }
+  function copyOld(t) {
+    var ta = document.createElement("textarea"); ta.value = t; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select();
+    var ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove(); toast(ok ? "Código Pix copiado! Cole no app do seu banco" : "Não deu para copiar. Use a chave: " + PIX.chaveFmt, 5000);
+  }
+  function pixScreen() {
+    return {
+      name: "pix",
+      render: function () {
+        var d = daysLeft();
+        var venc = fmtDate(account && account.exp_date) + (d === null ? "" : d < 0 ? " (vencido)" : d === 0 ? " (vence hoje)" : " (faltam " + d + " dia" + (d > 1 ? "s" : "") + ")");
+        var pl = PIX.planos.map(function (x) {
+          return '<div class="prow' + (x.best ? " best" : "") + '"><span class="c1">' + esc(x.n) + (x.best ? ' <em>MAIS ECONÔMICO</em>' : "") + '</span>' +
+            '<span class="c2"><i class="tl' + (x.t > 1 ? " t2" : "") + '">' + x.t + (x.t > 1 ? " telas" : " tela") + "</i></span>" +
+            '<span class="c3">' + esc(x.p) + '</span><span class="c4">R$ ' + esc(x.m) + '</span><span class="c5">R$ ' + esc(x.v) + "</span></div>";
+        }).join("");
+        $app.innerHTML = frame("set", '<div class="content full pixpage">' +
+          '<div class="phead"><h2>💳 Pagamento Pix</h2><div class="pvenc' + (d !== null && d <= 5 ? " warn" : "") + '"><small>Seu vencimento</small><b>' + esc(venc) + "</b></div></div>" +
+          '<div class="pgrid">' +
+            '<div class="pcard pay"><div class="ptitle">Pague com Pix</div>' +
+              '<div class="pixqr"><img src="pix.png" alt="QR Code Pix"></div>' +
+              '<small class="qrtip">Leia o QR Code com o app do seu banco</small>' +
+              '<div class="pk"><small>Chave Pix · ' + esc(PIX.tipo) + '</small><b>' + esc(PIX.chaveFmt) + "</b></div>" +
+              '<div class="kv"><span>Banco</span><b>' + esc(PIX.banco) + '</b></div><div class="kv"><span>Recebedor</span><b>' + esc(PIX.nome) + "</b></div>" +
+              '<div class="pixbtns"><button class="sbtn focusable" data-k="px-copy" data-a="copy">📋 Copiar código Pix</button><button class="sbtn focusable" data-k="px-key" data-a="key">Copiar só a chave</button></div>' +
+            "</div>" +
+            '<div class="pcard plans"><div class="ptitle">Planos</div>' +
+              '<div class="prow phd"><span class="c1">Plano</span><span class="c2">Telas</span><span class="c3">Período</span><span class="c4">Por mês</span><span class="c5">Total</span></div>' + pl +
+              '<div class="comp"><b>✅ Depois de pagar</b>Mande o comprovante no WhatsApp <b>' + esc(fmtPhone(C.whatsapp || "")) + "</b> junto com o seu usuário <b>" + esc(creds.user) + "</b>.</div>" +
+            "</div>" +
+          "</div></div>");
+        bindRail("set");
+        var b = $app.querySelectorAll(".pixbtns .sbtn");
+        for (var i = 0; i < b.length; i++) b[i].onclick = function () { copyText(this.getAttribute("data-a") === "copy" ? PIX.codigo : PIX.chave); };
+        focusEl($app.querySelector('[data-k="px-copy"]'));
       }
     };
   }
