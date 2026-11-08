@@ -253,3 +253,5 @@ body.phone .plat { width: 72px; height: 72px; font-size: 11px; border-width: 2px
 .gi .gn { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .gi .cnt { margin-left: auto; flex: none; font-size: 13px; font-weight: 700; color: var(--gold); background: rgba(0,0,0,.35); padding: 2px 8px; border-radius: 10px; }
 .gi:focus .cnt { color: #fff; background: var(--red); } .gi.on .cnt { color: #15161b; background: var(--gold); }
+.gfav { align-self: flex-start; margin-top: 6px; padding: 6px 14px; border-radius: 20px; border: 2px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+.gfav:focus, .gfav.focus { background: #e50914; border-color: #fff; outline: none; transform: scale(1.06); }

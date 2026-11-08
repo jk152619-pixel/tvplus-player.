@@ -202,6 +202,10 @@
     }
     if (best) focusEl(best);
   }
+  var okTimer = 0, okEl = null;
+  document.addEventListener("keyup", function (e) {
+    if ((e.keyCode === 13 || e.keyCode === 23) && okTimer) { clearTimeout(okTimer); okTimer = 0; var el = okEl; okEl = null; if (el) el.click(); }
+  });
   document.addEventListener("keydown", function (e) {
     var k = e.keyCode, a = document.activeElement;
     var isInput = a && a.tagName === "INPUT";
@@ -212,6 +216,11 @@
     } else if (k === 13 || k === 23) {
       if (isInput) { if (a.onenter) { e.preventDefault(); a.onenter(); } return; }
       e.preventDefault();
+      if (a && a.oncontextmenu && a.classList.contains("focusable")) {
+        // segurar OK = favoritar; toque rápido = abrir (decide ao soltar)
+        if (!e.repeat && !okTimer) { okEl = a; okTimer = setTimeout(function () { okTimer = 0; var el = okEl; okEl = null; if (el && el.oncontextmenu) el.oncontextmenu({ preventDefault: function () {} }); }, 650); }
+        return;
+      }
       if (a && a.classList && a.classList.contains("focusable")) a.click(); else focusFirst();
     } else if (k === 27 && !isNative) {
       e.preventDefault(); window.appBack();
@@ -630,7 +639,9 @@
           }
           var gt = 0;
           function guide(c) {
-            $app.querySelector(".gprev").innerHTML = (c.stream_icon ? '<img src="' + esc(c.stream_icon) + '" onerror="this.remove()">' : "") + "<div><b>" + esc(c.name) + "</b><small>OK assiste · segure OK p/ favoritar</small></div>";
+            $app.querySelector(".gprev").innerHTML = (c.stream_icon ? '<img src="' + esc(c.stream_icon) + '" onerror="this.remove()">' : "") + "<div><b>" + esc(c.name) + "</b><small>OK assiste · segure OK p/ favoritar</small><button class=\"gfav focusable\" data-k=\"gfav\">" + (isFav("live", c.stream_id) ? "★ Nos favoritos" : "☆ Favoritar canal") + "</button></div>";
+            var gf = $app.querySelector(".gfav");
+            gf.onclick = function () { var on = toggleFav("live", c, c.stream_id); this.textContent = on ? "★ Nos favoritos" : "☆ Favoritar canal"; var b = $app.querySelector('[data-k="ch-' + c.stream_id + '"] b'); if (b) b.textContent = c.name + (on ? " ★" : ""); };
             var gl = $app.querySelector(".glist"); gl.innerHTML = '<div class="empty">Carregando guia...</div>';
             clearTimeout(gt);
             gt = setTimeout(function () {
@@ -655,8 +666,6 @@
     };
   }
   // segurar OK = favoritar (controle remoto)
-  var okDown = 0;
-  document.addEventListener("keydown", function (e) { if ((e.keyCode === 13 || e.keyCode === 23) && !e.repeat) okDown = Date.now(); else if ((e.keyCode === 13 || e.keyCode === 23) && e.repeat && okDown && Date.now() - okDown > 700) { okDown = 0; var a = document.activeElement; if (a && a.oncontextmenu) a.oncontextmenu({ preventDefault: function () {} }); } }, true);
 
   // ---------- Filmes e Séries (grupos à esquerda, abas em cima, capas) ----------
   function fmtN(n) { return String(n || 0).replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
