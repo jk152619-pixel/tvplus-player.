@@ -5,7 +5,7 @@ html, body { height: 100%; color: #fff; font-family: "Roboto", "Segoe UI", Arial
 #app { height: 100%; position: relative; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; text-align: left; }
 input { font: inherit; }
-.focusable { outline: none; transition: transform .12s, background .12s, box-shadow .12s, color .12s; }
+.focusable { outline: none; transition: transform .08s; }
 .empty { padding: 24px; color: var(--muted); font-size: 18px; }
 
 /* marca d'água TVPlus+ */
@@ -229,7 +229,7 @@ body.phone .two .groups { width: 150px; min-width: 0; }
 .plat { position: relative; overflow: hidden; width: 100px; height: 100px; font-size: 15px; letter-spacing: .3px;
   border: 3px solid rgba(255,255,255,.85);
   box-shadow: 0 10px 18px rgba(0,0,0,.65), 0 3px 0 rgba(0,0,0,.35), inset 0 -10px 16px rgba(0,0,0,.45), inset 0 6px 10px rgba(255,255,255,.35);
-  text-shadow: 0 2px 3px rgba(0,0,0,.55); transition: transform .15s, box-shadow .15s, border-color .15s; }
+  text-shadow: 0 2px 3px rgba(0,0,0,.55); transition: transform .08s; }
 .plat::before { content: ""; position: absolute; left: 12%; right: 12%; top: 4%; height: 42%; border-radius: 50%;
   background: linear-gradient(rgba(255,255,255,.55), rgba(255,255,255,0)); pointer-events: none; }
 .plat::after { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
@@ -255,3 +255,10 @@ body.phone .plat { width: 72px; height: 72px; font-size: 11px; border-width: 2px
 .gi:focus .cnt { color: #fff; background: var(--red); } .gi.on .cnt { color: #15161b; background: var(--gold); }
 .gfav { align-self: flex-start; margin-top: 6px; padding: 6px 14px; border-radius: 20px; border: 2px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
 .gfav:focus, .gfav.focus { background: #e50914; border-color: #fff; outline: none; transform: scale(1.06); }
+
+#exitDlg { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.75); display: flex; align-items: center; justify-content: center; }
+#exitDlg .xbox { background: #1b1c22; border: 3px solid var(--gold); border-radius: 14px; padding: 28px 34px; text-align: center; min-width: 320px; }
+#exitDlg b { display: block; font-size: 24px; color: #fff; margin-bottom: 22px; }
+#exitDlg .xbtns { display: flex; gap: 16px; justify-content: center; }
+#exitDlg button { font-size: 19px; font-weight: 700; padding: 10px 26px; border-radius: 8px; border: 2px solid rgba(255,255,255,.3); background: #2c2d35; color: #fff; }
+#exitDlg button:focus { background: var(--red); border-color: var(--gold); transform: scale(1.08); }

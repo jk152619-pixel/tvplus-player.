@@ -136,7 +136,8 @@
 
   // ---------------- navegação por controle ----------------
   function focusables() {
-    var all = $app.querySelectorAll(".focusable"), out = [];
+    var dlg = document.getElementById("exitDlg");
+    var all = (dlg || $app).querySelectorAll(".focusable"), out = [];
     for (var i = 0; i < all.length; i++) if (all[i].offsetParent !== null) out.push(all[i]);
     return out;
   }
@@ -202,10 +203,19 @@
     }
     if (best) focusEl(best);
   }
-  var okTimer = 0, okEl = null;
+  var okTimer = 0, okEl = null, blockClickUntil = 0;
   document.addEventListener("keyup", function (e) {
-    if ((e.keyCode === 13 || e.keyCode === 23) && okTimer) { clearTimeout(okTimer); okTimer = 0; var el = okEl; okEl = null; if (el) el.click(); }
-  });
+    if (e.keyCode !== 13 && e.keyCode !== 23) return;
+    var a = document.activeElement;
+    if (a && a.tagName === "INPUT") return;
+    e.preventDefault();
+    if (okTimer) { clearTimeout(okTimer); okTimer = 0; var el = okEl; okEl = null; if (el) el.click(); }
+    else if (Date.now() < blockClickUntil) blockClickUntil = Date.now() + 400;
+  }, true);
+  // depois de favoritar segurando OK, ignora o "clique" que o controle manda ao soltar
+  document.addEventListener("click", function (e) {
+    if (Date.now() < blockClickUntil) { e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); }
+  }, true);
   document.addEventListener("keydown", function (e) {
     var k = e.keyCode, a = document.activeElement;
     var isInput = a && a.tagName === "INPUT";
@@ -218,7 +228,7 @@
       e.preventDefault();
       if (a && a.oncontextmenu && a.classList.contains("focusable")) {
         // segurar OK = favoritar; toque rápido = abrir (decide ao soltar)
-        if (!e.repeat && !okTimer) { okEl = a; okTimer = setTimeout(function () { okTimer = 0; var el = okEl; okEl = null; if (el && el.oncontextmenu) el.oncontextmenu({ preventDefault: function () {} }); }, 650); }
+        if (!e.repeat && !okTimer) { okEl = a; okTimer = setTimeout(function () { okTimer = 0; var el = okEl; okEl = null; blockClickUntil = Date.now() + 1500; if (el && el.oncontextmenu) el.oncontextmenu({ preventDefault: function () {} }); }, 650); }
         return;
       }
       if (a && a.classList && a.classList.contains("focusable")) a.click(); else focusFirst();
@@ -253,15 +263,32 @@
       prev.render(true);
       return true;
     }
-    if (current && current.name === "home") {
-      var now = Date.now();
-      if (now - lastBack < 2200) return false;
-      lastBack = now;
-      toast("Pressione voltar novamente para sair");
+    var dlg = document.getElementById("exitDlg");
+    if (dlg) { closeExit(); return true; }
+    if (current && current.name === "home") { askExit(); return true; }
+    if (current && account && ["login", "pin", "newpin", "device"].indexOf(current.name) < 0) {
+      var from = current.name === "live" ? "tv" : current.name; current.focusKey = null;
+      show(homeScreen()); focusEl($app.querySelector('[data-k="rail-' + from + '"]') || $app.querySelector('[data-k="rail-tv"]'));
       return true;
     }
     return false;
   };
+  var exitPrevFocus = null;
+  function askExit() {
+    exitPrevFocus = document.activeElement;
+    var d = document.createElement("div"); d.id = "exitDlg";
+    d.innerHTML = '<div class="xbox"><b>Deseja sair do TVPlus+?</b><div class="xbtns"><button class="focusable xno" data-k="x-no">Não</button><button class="focusable xyes" data-k="x-yes">Sim, sair</button></div></div>';
+    document.body.appendChild(d);
+    d.querySelector(".xno").onclick = closeExit;
+    d.querySelector(".xyes").onclick = function () { if (window.Native && window.Native.exit) window.Native.exit(); else closeExit(); };
+    d.onclick = function (e) { if (e.target === d) closeExit(); };
+    var no = d.querySelector(".xno"); try { no.focus({ preventScroll: true }); } catch (e) { no.focus(); }
+  }
+  function closeExit() {
+    var d = document.getElementById("exitDlg"); if (d) d.remove();
+    if (exitPrevFocus && document.body.contains(exitPrevFocus)) { try { exitPrevFocus.focus({ preventScroll: true }); } catch (e) { exitPrevFocus.focus(); } }
+    exitPrevFocus = null;
+  }
 
   function recent(all, field, n) { return all.slice().sort(function (a, b) { return (Number(b[field]) || 0) - (Number(a[field]) || 0); }).slice(0, n); }
 
@@ -548,7 +575,7 @@
           if (back) restore(self, ".banner");
         }, function () {});
         if (!slides.length) $app.querySelector(".banner").onclick = function () { go(vodScreen()); };
-        if (back) restore(self, ".banner"); else focusEl($app.querySelector(".banner"));
+        if (back) restore(self, ".banner"); else focusEl($app.querySelector('[data-k="rail-tv"]') || $app.querySelector(".banner"));
       }
     };
   }
