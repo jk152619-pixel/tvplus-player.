@@ -1185,7 +1185,7 @@
         var d = daysLeft();
         var venc = fmtDate(account && account.exp_date) + (d === null ? "" : d < 0 ? " (vencido)" : d === 0 ? " (vence hoje)" : " (faltam " + d + " dia" + (d > 1 ? "s" : "") + ")");
         var pl = PIX.planos.map(function (x) {
-          return '<div class="prow' + (x.best ? " best" : "") + '"><span class="c1">' + esc(x.n) + (x.best ? ' <em>MAIS ECONÔMICO</em>' : "") + '</span>' +
+          return '<div class="prow' + (x.best ? " best" : "") + '"><span class="c1">' + esc(x.n) + (x.best ? '<em>MAIS ECONÔMICO</em>' : "") + '</span>' +
             '<span class="c2"><i class="tl' + (x.t > 1 ? " t2" : "") + '">' + x.t + (x.t > 1 ? " telas" : " tela") + "</i></span>" +
             '<span class="c3">' + esc(x.p) + '</span><span class="c4">R$ ' + esc(x.m) + '</span><span class="c5">R$ ' + esc(x.v) + "</span></div>";
         }).join("");
@@ -1197,7 +1197,8 @@
               '<small class="qrtip">Leia o QR Code com o app do seu banco</small>' +
               '<div class="pk"><small>Chave Pix · ' + esc(PIX.tipo) + '</small><b>' + esc(PIX.chaveFmt) + "</b></div>" +
               '<div class="kv"><span>Banco</span><b>' + esc(PIX.banco) + '</b></div><div class="kv"><span>Recebedor</span><b>' + esc(PIX.nome) + "</b></div>" +
-              '<div class="pixbtns"><button class="sbtn focusable" data-k="px-copy" data-a="copy">📋 Copiar código Pix</button><button class="sbtn focusable" data-k="px-key" data-a="key">Copiar só a chave</button></div>' +
+              (device === "phone" ? '<div class="pixbtns"><button class="sbtn focusable" data-k="px-copy" data-a="copy">📋 Copiar código Pix</button><button class="sbtn focusable" data-k="px-key" data-a="key">Copiar só a chave</button></div>'
+                : '<div class="howpay"><b>📱 Como pagar</b><span>1. Abra o app do seu banco no celular</span><span>2. Toque em <b>Pix › Ler QR Code</b></span><span>3. Aponte para a TV e escolha o valor do plano</span></div>') +
             "</div>" +
             '<div class="pcard plans"><div class="ptitle">Planos</div>' +
               '<div class="prow phd"><span class="c1">Plano</span><span class="c2">Telas</span><span class="c3">Período</span><span class="c4">Por mês</span><span class="c5">Total</span></div>' + pl +
@@ -1207,7 +1208,7 @@
         bindRail("set");
         var b = $app.querySelectorAll(".pixbtns .sbtn");
         for (var i = 0; i < b.length; i++) b[i].onclick = function () { copyText(this.getAttribute("data-a") === "copy" ? PIX.codigo : PIX.chave); };
-        focusEl($app.querySelector('[data-k="px-copy"]'));
+        focusEl($app.querySelector('[data-k="px-copy"]') || $app.querySelector('[data-k="rail-set"]'));
       }
     };
   }
