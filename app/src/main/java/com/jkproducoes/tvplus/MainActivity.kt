@@ -287,6 +287,11 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun isApp(): Boolean = true
 
+        /** Onde a pessoa parou na série/filme (gravado pelo player). */
+        @JavascriptInterface
+        fun lastWatched(key: String): String =
+            getSharedPreferences("tvplus_watch", MODE_PRIVATE).getString(key, "") ?: ""
+
         @JavascriptInterface
         fun checkUpdate() { runOnUiThread { this@MainActivity.checkUpdate(true) } }
 

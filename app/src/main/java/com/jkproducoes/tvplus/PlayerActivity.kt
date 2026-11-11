@@ -74,6 +74,10 @@ class PlayerActivity : Activity() {
     private var numberBuffer = ""
     private var currentUri = ""
     private var stallTries = 0
+    // "Continuar de onde parou": chave da série/filme e a marca de cada episódio (temporada|posição)
+    private var watchKey = ""
+    private val tags = ArrayList<String>()
+    private val series get() = !live && urls.size > 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,6 +91,9 @@ class PlayerActivity : Activity() {
         if (t != null) for (i in 0 until t.length()) titles.add(t.getString(i))
         index = data.optInt("index", 0).coerceIn(0, maxOf(0, urls.size - 1))
         live = data.optBoolean("live", false)
+        watchKey = data.optString("key", "")
+        val tg = data.optJSONArray("tags")
+        if (tg != null) for (i in 0 until tg.length()) tags.add(tg.getString(i))
         if (urls.isEmpty()) { finish(); return }
 
         buildUi()
@@ -122,6 +129,7 @@ class PlayerActivity : Activity() {
                         savePosition(0)
                         index++
                         start(true)
+                        Toast.makeText(this@PlayerActivity, "Próximo episódio: ${titles.getOrElse(index) { "" }}", Toast.LENGTH_LONG).show()
                     } else {
                         savePosition(0)
                         finish()
@@ -209,6 +217,10 @@ class PlayerActivity : Activity() {
         titleView.ellipsize = TextUtils.TruncateAt.END
         titleView.setPadding(dp(16), 0, dp(8), 0)
         topBar.addView(titleView, LinearLayout.LayoutParams(0, -2, 1f))
+        if (series) {
+            topBar.addView(button("⏮  Ep. anterior") { changeEpisode(-1) })
+            topBar.addView(button("Próximo ep.  ⏭") { changeEpisode(1) })
+        }
         topBar.addView(button("⛶  Tela") { cycleResize() })
         root.addView(topBar, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
 
@@ -388,6 +400,36 @@ class PlayerActivity : Activity() {
         titleView.text = if (live) "${index + 1}  •  $name" else name
         playUri(urls[index], resume)
         if (live) showBars()
+        saveWatch(getPreferences(MODE_PRIVATE).getLong(urls[index], 0L), -1L)
+    }
+
+    /** Volta para o episódio anterior ou vai para o próximo (guarda onde parou no atual). */
+    private fun changeEpisode(delta: Int) {
+        if (!series || !::player.isInitialized) return
+        val next = index + delta
+        if (next < 0 || next >= urls.size) {
+            Toast.makeText(this, if (delta < 0) "Este é o primeiro episódio" else "Este é o último episódio", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val d = player.duration
+        val p = player.currentPosition
+        if (d > 0 && p > d - 60000) savePosition(0) else savePosition(p)
+        index = next
+        start(true)
+        view.showController()
+        Toast.makeText(this, titles.getOrElse(index) { "" }, Toast.LENGTH_SHORT).show()
+    }
+
+    /** Guarda qual episódio/filme estava passando e em que ponto, para o app continuar dali. */
+    private fun saveWatch(pos: Long, dur: Long) {
+        if (live || watchKey.isEmpty() || urls.isEmpty()) return
+        val o = JSONObject()
+        o.put("tag", tags.getOrElse(index) { index.toString() })
+        o.put("title", titles.getOrElse(index) { "" })
+        o.put("pos", pos)
+        o.put("dur", dur)
+        o.put("t", System.currentTimeMillis())
+        getSharedPreferences("tvplus_watch", MODE_PRIVATE).edit().putString(watchKey, o.toString()).apply()
     }
 
     private fun playUri(url: String, resume: Boolean) {
@@ -531,6 +573,8 @@ class PlayerActivity : Activity() {
         // Filmes e séries
         if (down && code == KeyEvent.KEYCODE_MENU) { cycleResize(); return true }
         when (code) {
+            KeyEvent.KEYCODE_MEDIA_NEXT -> { if (down && event.repeatCount == 0) changeEpisode(1); return true }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { if (down && event.repeatCount == 0) changeEpisode(-1); return true }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (down) seekBy(30000); return true }
             KeyEvent.KEYCODE_MEDIA_REWIND -> { if (down) seekBy(-30000); return true }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
@@ -627,7 +671,14 @@ class PlayerActivity : Activity() {
         if (::player.isInitialized) {
             val d = player.duration
             val p = player.currentPosition
-            if (d > 0 && p > d - 60000) savePosition(0) else savePosition(p)
+            if (d > 0 && p > d - 60000) {
+                savePosition(0)
+                // Terminou o episódio: o "continuar" já aponta para o próximo
+                if (series && index < urls.size - 1) { index++; saveWatch(0, -1); index-- } else saveWatch(0, d)
+            } else {
+                savePosition(p)
+                saveWatch(p, d)
+            }
             player.playWhenReady = false
         }
     }
