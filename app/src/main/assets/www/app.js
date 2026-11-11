@@ -1191,7 +1191,9 @@
   };
   function daysLeft() {
     var ts = account && account.exp_date; if (!ts || ts === "null") return null;
-    return Math.ceil((Number(ts) * 1000 - Date.now()) / 86400000);
+    var e = new Date(Number(ts) * 1000), h = new Date();
+    var a = Date.UTC(e.getFullYear(), e.getMonth(), e.getDate()), b = Date.UTC(h.getFullYear(), h.getMonth(), h.getDate());
+    return Math.round((a - b) / 86400000);
   }
   function payFoot() {
     var d = daysLeft();
@@ -1247,5 +1249,33 @@
 
   // ---------- início ----------
   function start() { if (creds && account) show(homeScreen()); else show(loginScreen()); }
+  // ---------- atualiza a conta (vencimento) direto do servidor ----------
+  // Antes o vencimento ficava guardado só do dia do login; quando o cliente renovava,
+  // o app continuava mostrando a data antiga. Agora confere ao abrir, ao voltar pro app e a cada 15 min.
+  var lastSync = 0;
+  function syncAccount(force) {
+    if (!creds || !creds.user || !creds.pass) return;
+    if (!force && Date.now() - lastSync < 60000) return;
+    lastSync = Date.now();
+    tryLogin(creds.user, creds.pass).then(function (r) {
+      if (!creds) return;
+      creds.dns = r.dns; account = r.info; save("creds", creds); save("account", account);
+      if (current && current.name === "home") {
+        var sp = $app.querySelectorAll(".hhead span");
+        if (sp[1]) sp[1].innerHTML = ICON.calsm + " " + esc(fmtDate(account.exp_date));
+        var pf = $app.querySelector(".payfoot");
+        if (pf) {
+          var had = document.activeElement === pf, tmp = document.createElement("div");
+          tmp.innerHTML = payFoot(); var nf = tmp.firstChild;
+          pf.parentNode.replaceChild(nf, pf); nf.onclick = function () { go(pixScreen()); };
+          if (had) focusEl(nf);
+        }
+      }
+    }, function () {});
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") syncAccount(false); });
+  setInterval(function () { syncAccount(true); }, 15 * 60000);
+  setTimeout(function () { syncAccount(true); }, 1500);
+
   if (!device) show(deviceScreen(start)); else start();
 })();
