@@ -93,6 +93,15 @@
       return d;
     });
   }
+  // Onde a pessoa parou (o player do app grava; no navegador fica o último clicado)
+  function lastWatched(key) {
+    try { if (isNative && window.Native.lastWatched) { var v = window.Native.lastWatched(key); if (v) return JSON.parse(v); } } catch (e) {}
+    return load("watch", {})[key] || null;
+  }
+  function fmtTime(ms) {
+    var t = Math.floor(Math.max(0, ms) / 1000), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), x = t % 60;
+    return (h ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (x < 10 ? "0" : "") + x;
+  }
   function streamUrl(kind, id, ext) {
     var b = creds.dns.replace(/\/+$/, "");
     return b + "/" + kind + "/" + encodeURIComponent(creds.user) + "/" + encodeURIComponent(creds.pass) + "/" + id + "." + ext;
@@ -102,8 +111,12 @@
     if (!f.length || f.indexOf("ts") >= 0) return "ts";
     return "m3u8";
   }
-  function play(urls, titles, index, live) {
+  function play(urls, titles, index, live, key, tags) {
     var data = { urls: urls, titles: titles, index: index || 0, live: !!live };
+    if (key) {
+      data.key = key; data.tags = tags || [];
+      var w = load("watch", {}); w[key] = { tag: (tags || [])[index || 0] || String(index || 0), title: titles[index || 0], pos: 0, dur: -1, t: Date.now() }; save("watch", w);
+    }
     if (isNative) window.Native.play(JSON.stringify(data));
     else toast("▶ " + titles[index || 0] + " (o vídeo abre no app instalado)");
   }
@@ -793,7 +806,9 @@
     if (type === "movie") {
       var ext = it.container_extension || "mp4";
       addHist({ k: "m" + it.stream_id, type: "movie", name: it.name, img: it.stream_icon, it: it });
-      play([streamUrl("movie", it.stream_id, ext)], [it.name], 0, false);
+      var mk = "m" + it.stream_id, mw = lastWatched(mk);
+      if (mw && mw.pos > 10000) toast("▶ Continuando de " + fmtTime(mw.pos), 3500);
+      play([streamUrl("movie", it.stream_id, ext)], [it.name], 0, false, mk, ["0"]);
     } else go(seriesScreen(it));
   }
   function seriesScreen(it) {
@@ -803,29 +818,46 @@
       render: function (back) {
         var self = this;
         var bd = it.backdrop_path && it.backdrop_path[0];
-        $app.innerHTML = frame("vod", '<div class="detail"' + bg(bd) + '><div class="dshade"></div><div class="dhead"><div class="poster"' + bg(it.cover) + '></div><div><h1>' + esc(it.name) + '</h1><div class="meta">' + esc([it.releaseDate || it.year, it.genre, it.rating ? "★ " + it.rating : ""].filter(Boolean).join(" · ")) + '</div><p>' + esc(it.plot || "") + '</p><button class="btn-fav focusable" data-k="sfav">' + (isFav("series", it.series_id) ? "★ Nos favoritos" : "☆ Favoritar") + '</button></div></div><div class="seasons"></div><div class="eps"><div class="empty">Carregando episódios...</div></div></div>');
+        $app.innerHTML = frame("vod", '<div class="detail"' + bg(bd) + '><div class="dshade"></div><div class="dhead"><div class="poster"' + bg(it.cover) + '></div><div><h1>' + esc(it.name) + '</h1><div class="meta">' + esc([it.releaseDate || it.year, it.genre, it.rating ? "★ " + it.rating : ""].filter(Boolean).join(" · ")) + '</div><p>' + esc(it.plot || "") + '</p><button class="btn-fav focusable" data-k="sfav">' + (isFav("series", it.series_id) ? "★ Nos favoritos" : "☆ Favoritar") + '</button></div></div><div class="cont"></div><div class="seasons"></div><div class="eps"><div class="empty">Carregando episódios...</div></div></div>');
         bindRail("vod");
         $app.querySelector(".btn-fav").onclick = function () { toggleFav("series", it, it.series_id); this.textContent = isFav("series", it.series_id) ? "★ Nos favoritos" : "☆ Favoritar"; };
         function draw() {
           var eps = (data && data.episodes) || {}, keys = Object.keys(eps).sort(function (a, b) { return a - b; });
           if (!keys.length) { $app.querySelector(".eps").innerHTML = '<div class="empty">Sem episódios</div>'; return; }
+          // Todas as temporadas em sequência: assim "próximo/anterior" passa de uma temporada para a outra
+          var allUrls = [], allNames = [], allTags = [];
+          keys.forEach(function (k) { (eps[k] || []).forEach(function (e, i) {
+            allUrls.push(streamUrl("series", e.id, e.container_extension || "mp4"));
+            allNames.push(it.name + " – T" + k + "E" + (e.episode_num || i + 1));
+            allTags.push(k + "|" + i);
+          }); });
+          var skey = "s" + it.series_id, lw = lastWatched(skey), lwIdx = lw ? allTags.indexOf(lw.tag) : -1;
+          if (lwIdx >= 0 && !season) season = lw.tag.split("|")[0];
           if (!season || !eps[season]) season = keys[0];
+          var cont = $app.querySelector(".cont");
+          if (lwIdx >= 0) {
+            var lp = lw.tag.split("|"), le = (eps[lp[0]] || [])[Number(lp[1])] || {};
+            var where = "Temporada " + lp[0] + " · Episódio " + (le.episode_num || Number(lp[1]) + 1) + (lw.pos > 10000 ? " · parou em " + fmtTime(lw.pos) : "");
+            cont.innerHTML = '<button class="contb focusable" data-k="cont"><b>▶ Continuar assistindo</b><span>' + esc(where) + "</span></button>";
+            cont.querySelector(".contb").onclick = function () {
+              addHist({ k: skey, type: "series", name: it.name, img: it.cover, it: it });
+              play(allUrls, allNames, lwIdx, false, skey, allTags);
+            };
+          } else cont.innerHTML = "";
           $app.querySelector(".seasons").innerHTML = keys.map(function (k) { return '<button class="sbtn focusable' + (k === season ? " on" : "") + '" data-k="s-' + k + '" data-s="' + k + '">Temporada ' + k + "</button>"; }).join("");
           var list = eps[season] || [];
-          $app.querySelector(".eps").innerHTML = list.map(function (e, i) { return '<button class="epb focusable" data-k="e-' + e.id + '" data-i="' + i + '"><b>' + (e.episode_num || i + 1) + "</b> " + esc(e.title || "Episódio " + (i + 1)) + "</button>"; }).join("");
+          $app.querySelector(".eps").innerHTML = list.map(function (e, i) { var cur = lwIdx >= 0 && lw.tag === season + "|" + i; return '<button class="epb focusable' + (cur ? " cur" : "") + '" data-k="e-' + e.id + '" data-i="' + i + '"><b>' + (e.episode_num || i + 1) + "</b> " + esc(e.title || "Episódio " + (i + 1)) + (cur ? '<em>▶ parou aqui</em>' : "") + "</button>"; }).join("");
           var sb = $app.querySelectorAll(".sbtn");
           for (var i = 0; i < sb.length; i++) sb[i].onclick = function () { season = this.getAttribute("data-s"); draw(); focusEl($app.querySelector(".epb")); };
-          var urls = list.map(function (e) { return streamUrl("series", e.id, e.container_extension || "mp4"); });
-          var names = list.map(function (e) { return it.name + " – T" + season + "E" + (e.episode_num || ""); });
           var eb = $app.querySelectorAll(".epb");
           for (var j = 0; j < eb.length; j++) eb[j].onclick = function () {
-            addHist({ k: "s" + it.series_id, type: "series", name: it.name, img: it.cover, it: it });
-            play(urls, names, Number(this.getAttribute("data-i")), false);
+            addHist({ k: skey, type: "series", name: it.name, img: it.cover, it: it });
+            play(allUrls, allNames, allTags.indexOf(season + "|" + this.getAttribute("data-i")), false, skey, allTags);
           };
         }
-        if (data) { draw(); restore(self, ".epb"); return; }
+        if (data) { season = null; draw(); focusEl($app.querySelector(".contb") || $app.querySelector(".epb")); return; }
         busy(true);
-        api("get_series_info", "&series_id=" + it.series_id).then(function (d) { busy(false); data = d || {}; draw(); focusEl($app.querySelector(".epb") || $app.querySelector(".btn-fav")); },
+        api("get_series_info", "&series_id=" + it.series_id).then(function (d) { busy(false); data = d || {}; draw(); focusEl($app.querySelector(".contb") || $app.querySelector(".epb") || $app.querySelector(".btn-fav")); },
           function (e) { busy(false); toast("Erro: " + e.message); });
       }
     };
