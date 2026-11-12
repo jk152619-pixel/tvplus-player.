@@ -6,7 +6,8 @@ window.APP_CONFIG = {
     "http://yt19.org",
     "http://wempy.online:8080",
     "http://levi25.biz",
-    "http://t.smts.top:8880"
+    "http://t.smts.top:8880",
+    "http://foofighters.click"
   ],
   // WhatsApp de suporte (com DDI 55 + DDD). Deixe "" para esconder.
   whatsapp: "5583991485424"
