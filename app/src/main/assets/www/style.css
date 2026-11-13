@@ -387,3 +387,10 @@ body.phone .prow .c1 { overflow: visible; white-space: normal; }
 .vep { min-width: 128px; padding: 14px 18px; border-radius: 6px; background: #3a3b42; color: #fff; font-size: 18px; text-align: center; border: 2px solid transparent; }
 .vep.cur { border-color: var(--gold); color: var(--gold); }
 .vep:focus { background: var(--red); color: #fff; border-color: var(--gold); transform: scale(1.07); }
+
+/* Classificação: cada linha recebe o foco do controle, assim dá para descer e ver todos os times */
+.trow { outline: none; }
+.trow:focus td { background: var(--red); color: #fff; }
+.trow:focus td:first-child { box-shadow: inset 4px 0 0 var(--gold); }
+.trow:focus td b { color: var(--gold2); }
+.tbl table { margin-bottom: 18px; }
