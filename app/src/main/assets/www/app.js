@@ -338,7 +338,19 @@
   function arr(x) { return Array.isArray(x) ? x : []; }
   function bg(url) { return url ? " style=\"background-image:url('" + esc(url).replace(/'/g, "%27") + "')\"" : ""; }
   var device = load("device", null);
-  function applyDevice() { document.body.className = device === "phone" ? "phone" : "tv"; }
+  // Celular: mostra a mesma tela da TV (layout de 540 de altura), só que reduzida para caber inteira
+  function fitPhone() {
+    var root = document.documentElement;
+    if (device !== "phone") { root.style.zoom = ""; return; }
+    var h = Math.min(window.innerHeight || 540, window.innerWidth || 960);
+    // teclado aberto diminui a altura: nesse caso mantém o tamanho que já estava
+    if (fitPhone.h && h < fitPhone.h * 0.8) return;
+    fitPhone.h = h;
+    var z = Math.min(1, Math.max(0.45, h / 540));
+    root.style.zoom = String(z);
+  }
+  function applyDevice() { document.body.className = device === "phone" ? "tv celular" : "tv"; fitPhone(); }
+  window.addEventListener("resize", fitPhone);
   applyDevice();
   var history = load("hist", []);
   function addHist(item) {
