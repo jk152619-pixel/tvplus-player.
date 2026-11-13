@@ -343,14 +343,23 @@ body.phone .prow .c1 { overflow: visible; white-space: normal; }
 .epb.cur { background: rgba(247,191,26,.12); }
 .epb em { font-style: normal; font-size: 14px; color: var(--gold); margin-left: 10px; } .epb:focus em { color: #fff; }
 
-/* ===== Banner do Início: imagem inteira (sem cortar), com o fundo desfocado preenchendo as laterais ===== */
-.bblur { position: absolute; inset: -30px; background-size: cover; background-position: center; filter: blur(22px) brightness(.45); transform: scale(1.1); }
-.bimg { background-size: contain; background-repeat: no-repeat; background-position: right center; }
-.banner .bimg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(12,12,16,.55), transparent 45%); }
+/* ===== Banner do Início: imagem inteira à direita (16:9), título e resumo à esquerda, sem desfoque (mais leve na TV Box) ===== */
+.banner { background: linear-gradient(90deg, #15161b 0%, #1d1013 55%, #2a0a10 100%); }
+.banner .bimg { left: auto; right: 0; width: 70%; background-size: cover; background-repeat: no-repeat; background-position: center;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 22%); mask-image: linear-gradient(90deg, transparent 0%, #000 22%); }
+.banner .bimg.fadein { -webkit-animation: bfade .45s ease-out; animation: bfade .45s ease-out; }
+@-webkit-keyframes bfade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bfade { from { opacity: 0; } to { opacity: 1; } }
+.banner .btxt { top: 0; right: auto; width: 46%; padding: 0 20px 22px 26px; background: none; display: flex; flex-direction: column; justify-content: flex-end; z-index: 1; }
+.banner .btxt b { font-size: 26px; line-height: 1.15; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+.banner .btxt small { margin-top: 4px; }
+.bplot { margin-top: 8px; color: #cfd0d6; font-size: 14px; line-height: 1.35; max-height: 4.05em; overflow: hidden; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+.banner .dots { z-index: 1; }
 
 /* ===== Atalhos das plataformas: todos cabem na tela (o tamanho é ajustado pelo app) ===== */
 .plats { overflow: visible; justify-content: center; flex-wrap: nowrap; }
-.plat { padding: 4px; line-height: 1.05; letter-spacing: 0; word-break: normal; overflow-wrap: normal; }
+.plat { padding: 3px; line-height: 1.05; letter-spacing: -0.2px; word-break: normal; overflow-wrap: normal; }
+.plats { padding-left: 20px; padding-right: 20px; }
 
 /* ===== Detalhes de filme / série (modelo P2P) ===== */
 .vd { flex: 1; min-height: 0; display: flex; padding: 0; overflow: hidden; background: #121318; }
