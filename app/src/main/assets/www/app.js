@@ -1192,7 +1192,7 @@
           var box = $app.querySelector(".tbl"); box.innerHTML = '<div class="empty">Carregando...</div>';
           espn(ESPN_TABLE + cur + "/standings").then(function (r) {
             var groups = r && r.children && r.children.length ? r.children : [r || {}], out = "";
-            groups.forEach(function (gr) {
+            groups.forEach(function (gr, gi) {
               var en = arr(gr.standings && gr.standings.entries).slice();
               if (!en.length) return;
               en.sort(function (a, b) {
@@ -1203,7 +1203,7 @@
               if (groups.length > 1 && gr.name) out += "<h3>" + esc(gr.name) + "</h3>";
               out += '<table><tr><th>#</th><th class="l">Time</th><th>J</th><th>V</th><th>E</th><th>D</th><th>SG</th><th>PTS</th></tr>' + en.map(function (x, n) {
                 var t = x.team || {}, logo = t.logos && t.logos[0] && t.logos[0].href;
-                return "<tr><td>" + (stat(x, ["rank"]) || n + 1) + '</td><td class="l">' + (logo ? '<img src="' + esc(logo) + '" onerror="this.remove()">' : "") + esc(t.shortDisplayName || t.displayName || "") + "</td><td>" + esc(stat(x, ["gamesPlayed", "GP"])) + "</td><td>" + esc(stat(x, ["wins", "W"])) + "</td><td>" + esc(stat(x, ["ties", "D", "T"])) + "</td><td>" + esc(stat(x, ["losses", "L"])) + "</td><td>" + esc(stat(x, ["pointDifferential", "GD"])) + "</td><td><b>" + esc(stat(x, ["points", "P"])) + "</b></td></tr>";
+                return '<tr class="trow focusable" tabindex="0" data-k="tr-' + gi + "-" + n + '"><td>' + (stat(x, ["rank"]) || n + 1) + '</td><td class="l">' + (logo ? '<img src="' + esc(logo) + '" onerror="this.remove()">' : "") + esc(t.shortDisplayName || t.displayName || "") + "</td><td>" + esc(stat(x, ["gamesPlayed", "GP"])) + "</td><td>" + esc(stat(x, ["wins", "W"])) + "</td><td>" + esc(stat(x, ["ties", "D", "T"])) + "</td><td>" + esc(stat(x, ["losses", "L"])) + "</td><td>" + esc(stat(x, ["pointDifferential", "GD"])) + "</td><td><b>" + esc(stat(x, ["points", "P"])) + "</b></td></tr>";
               }).join("") + "</table>";
             });
             box.innerHTML = out || '<div class="empty">Classificação indisponível para essa liga</div>';
