@@ -2,6 +2,9 @@ package com.jkproducoes.tvplus
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -12,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.text.TextUtils
+import android.util.Base64
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.Gravity
@@ -23,9 +27,11 @@ import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ProgressBar
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.media3.common.MediaItem
@@ -36,9 +42,13 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerView
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @SuppressLint("UnsafeOptInUsageError", "SetTextI18n")
 class PlayerActivity : Activity() {
@@ -46,27 +56,56 @@ class PlayerActivity : Activity() {
     companion object {
         const val USER_AGENT = "TVPlusPlayer/1.0 (Linux; Android) ExoPlayer"
         private const val GOLD = 0xFFF7BF1A.toInt()
+        private const val RED = 0xFFE3101E.toInt()
     }
 
     private lateinit var player: ExoPlayer
     private lateinit var view: PlayerView
-    private lateinit var topBar: LinearLayout
-    private lateinit var titleView: TextView
-    private lateinit var bottomBar: LinearLayout
-    private lateinit var listPanel: LinearLayout
-    private lateinit var listView: ListView
     private lateinit var loading: ProgressBar
     private lateinit var numberView: TextView
     private lateinit var seekPanel: LinearLayout
     private lateinit var seekText: TextView
     private lateinit var seekTime: TextView
     private lateinit var seekBar: ProgressBar
+    private lateinit var listPanel: LinearLayout
+    private lateinit var listView: ListView
+
+    // TV ao vivo (modelo P2P): voltar + VIVO em cima, logo / nome / AO VIVO / A SEGUIR embaixo
+    private lateinit var liveTop: FrameLayout
+    private lateinit var liveInfo: LinearLayout
+    private lateinit var logoImg: ImageView
+    private lateinit var logoTxt: TextView
+    private lateinit var chName: TextView
+    private lateinit var progNow: ProgressBar
+    private lateinit var nowTime: TextView
+    private lateinit var nowTitle: TextView
+    private lateinit var nextBadge: TextView
+    private lateinit var nextTime: TextView
+    private lateinit var nextTitle: TextView
+    private lateinit var listBtn: TextView
+
+    // Filmes e séries: "VOD: nome" em cima, play / tempo / barra / duração embaixo, ▼ para mais opções
+    private lateinit var vodTop: LinearLayout
+    private lateinit var titleView: TextView
+    private lateinit var vodBottom: LinearLayout
+    private lateinit var playBtn: TextView
+    private lateinit var posText: TextView
+    private lateinit var durText: TextView
+    private lateinit var timeBar: SeekBar
+    private lateinit var optionsRow: LinearLayout
+    private lateinit var moreBtn: TextView
+    private var dragging = false
+
     private var seekTarget = -1L
     private var seekDelta = 0L
     private val handler = Handler(Looper.getMainLooper())
 
     private val urls = ArrayList<String>()
     private val titles = ArrayList<String>()
+    private val ids = ArrayList<String>()
+    private val logos = ArrayList<String>()
+    private var epgBase = ""
+    private val logoCache = HashMap<String, Bitmap?>()
     private var index = 0
     private var live = false
     private var triedAlt = false
@@ -94,6 +133,11 @@ class PlayerActivity : Activity() {
         watchKey = data.optString("key", "")
         val tg = data.optJSONArray("tags")
         if (tg != null) for (i in 0 until tg.length()) tags.add(tg.getString(i))
+        val di = data.optJSONArray("ids")
+        if (di != null) for (i in 0 until di.length()) ids.add(di.optString(i, ""))
+        val dl = data.optJSONArray("logos")
+        if (dl != null) for (i in 0 until dl.length()) logos.add(dl.optString(i, ""))
+        epgBase = data.optString("epg", "")
         if (urls.isEmpty()) { finish(); return }
 
         buildUi()
@@ -137,6 +181,10 @@ class PlayerActivity : Activity() {
                 }
             }
 
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!live) updatePlayIcon()
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 val cur = urls.getOrNull(index) ?: return
                 if (!triedAlt) {
@@ -162,92 +210,95 @@ class PlayerActivity : Activity() {
     }
 
     // ------------------------------------------------------------ interface
+    private fun text(sp: Float, color: Int, bold: Boolean = false): TextView {
+        val v = TextView(this)
+        v.setTextColor(color)
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
+        if (bold) v.setTypeface(v.typeface, Typeface.BOLD)
+        v.maxLines = 1
+        v.ellipsize = TextUtils.TruncateAt.END
+        return v
+    }
+
+    private fun rounded(color: Int, radius: Int, strokeColor: Int = 0): GradientDrawable {
+        val g = GradientDrawable()
+        g.cornerRadius = dp(radius).toFloat()
+        g.setColor(color)
+        if (strokeColor != 0) g.setStroke(dp(2), strokeColor)
+        return g
+    }
+
+    private fun badge(t: String, bgColor: Int): TextView {
+        val b = text(14f, Color.WHITE, true)
+        b.text = t
+        b.setPadding(dp(10), dp(3), dp(10), dp(3))
+        b.background = rounded(bgColor, 4)
+        return b
+    }
+
+    private fun chip(): TextView {
+        val c = text(17f, Color.WHITE)
+        c.setPadding(dp(10), dp(3), dp(10), dp(3))
+        c.background = rounded(0x553A3B42, 4)
+        return c
+    }
+
+    private fun lp(w: Int, h: Int, weight: Float = 0f, l: Int = 0, t: Int = 0, r: Int = 0, b: Int = 0): LinearLayout.LayoutParams {
+        val p = if (weight > 0f) LinearLayout.LayoutParams(w, h, weight) else LinearLayout.LayoutParams(w, h)
+        p.setMargins(l, t, r, b)
+        return p
+    }
+
     private fun buildUi() {
         val root = FrameLayout(this)
         root.setBackgroundColor(Color.BLACK)
 
         view = PlayerView(this)
         view.setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-        view.useController = !live
-        view.controllerShowTimeoutMs = 4000
-        view.controllerAutoShow = false   // os controles somem sozinhos, mesmo pausado
-        view.setShowFastForwardButton(true)
-        view.setShowRewindButton(true)
-        view.setShowNextButton(false)
-        view.setShowPreviousButton(false)
+        view.useController = false   // barras próprias no modelo P2P
         root.addView(view, FrameLayout.LayoutParams(-1, -1))
 
-        // Celular: dois toques na esquerda volta 10s, na direita adianta 10s
-        if (!live) {
-            val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-                override fun onDoubleTap(e: MotionEvent): Boolean {
-                    val w = view.width
-                    when {
-                        e.x < w * 0.4f -> { seekBy(-10000); return true }
-                        e.x > w * 0.6f -> { seekBy(10000); return true }
-                    }
-                    return false
+        // Toque na tela: mostra/esconde as barras; no filme, dois toques nos lados voltam/adiantam 10s
+        val touch = View(this)
+        val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (listPanel.visibility == View.VISIBLE) { closeList(); return true }
+                if (barsVisible()) hideBars() else showBars()
+                return true
+            }
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                if (live) return false
+                val w = touch.width
+                when {
+                    e.x < w * 0.4f -> { seekBy(-10000); return true }
+                    e.x > w * 0.6f -> { seekBy(10000); return true }
                 }
-            })
-            view.setOnTouchListener { _, ev -> gd.onTouchEvent(ev) }
-        }
-
-        // Tocar na tela (TV ao vivo) mostra/esconde as barras
-        if (live) {
-            val touch = View(this)
-            touch.setOnClickListener { if (barsVisible()) hideBars() else showBars() }
-            root.addView(touch, FrameLayout.LayoutParams(-1, -1))
-        }
+                if (barsVisible()) togglePlay() else showBars()
+                return true
+            }
+        })
+        touch.setOnTouchListener { _, ev -> gd.onTouchEvent(ev); true }
+        root.addView(touch, FrameLayout.LayoutParams(-1, -1))
 
         loading = ProgressBar(this)
+        loading.indeterminateTintList = ColorStateList.valueOf(GOLD)
         root.addView(loading, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER))
 
-        // Barra de cima: Voltar + nome + tamanho da tela
-        topBar = LinearLayout(this)
-        topBar.orientation = LinearLayout.HORIZONTAL
-        topBar.gravity = Gravity.CENTER_VERTICAL
-        topBar.setPadding(dp(16), dp(14), dp(16), dp(26))
-        topBar.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xE6000000.toInt(), 0x00000000))
-        topBar.addView(button("◀  Voltar") { finish() })
-        titleView = TextView(this)
-        titleView.setTextColor(Color.WHITE)
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
-        titleView.setTypeface(titleView.typeface, Typeface.BOLD)
-        titleView.maxLines = 1
-        titleView.ellipsize = TextUtils.TruncateAt.END
-        titleView.setPadding(dp(16), 0, dp(8), 0)
-        topBar.addView(titleView, LinearLayout.LayoutParams(0, -2, 1f))
-        if (series) {
-            topBar.addView(button("⏮  Ep. anterior") { changeEpisode(-1) })
-            topBar.addView(button("Próximo ep.  ⏭") { changeEpisode(1) })
-        }
-        topBar.addView(button("⛶  Tela") { cycleResize() })
-        root.addView(topBar, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
-
-        // Barra de baixo (TV ao vivo): canal anterior / lista / próximo
-        bottomBar = LinearLayout(this)
-        bottomBar.orientation = LinearLayout.HORIZONTAL
-        bottomBar.gravity = Gravity.CENTER
-        bottomBar.setPadding(dp(16), dp(26), dp(16), dp(18))
-        bottomBar.background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xE6000000.toInt(), 0x00000000))
-        bottomBar.addView(button("▲  Anterior") { changeChannel(-1) })
-        bottomBar.addView(button("☰  Lista de canais") { openList() })
-        bottomBar.addView(button("Próximo  ▼") { changeChannel(1) })
-        root.addView(bottomBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        buildLiveBars(root)
+        buildVodBars(root)
 
         // Lista de canais (painel lateral)
         listPanel = LinearLayout(this)
         listPanel.orientation = LinearLayout.VERTICAL
         listPanel.setBackgroundColor(0xF2101014.toInt())
+        listPanel.isClickable = true
         val headRow = LinearLayout(this)
         headRow.orientation = LinearLayout.HORIZONTAL
         headRow.gravity = Gravity.CENTER_VERTICAL
         headRow.setPadding(dp(12), dp(12), dp(12), dp(8))
-        val head = TextView(this)
+        val head = text(18f, GOLD, true)
         head.text = "Canais"
-        head.setTextColor(GOLD)
-        head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-        head.setTypeface(head.typeface, Typeface.BOLD)
         headRow.addView(head, LinearLayout.LayoutParams(0, -2, 1f))
         headRow.addView(button("✕  Fechar") { closeList() })
         listPanel.addView(headRow)
@@ -275,10 +326,7 @@ class PlayerActivity : Activity() {
         root.addView(listPanel, FrameLayout.LayoutParams(dp(330), -1, Gravity.START))
         listPanel.visibility = View.GONE
 
-        numberView = TextView(this)
-        numberView.setTextColor(GOLD)
-        numberView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f)
-        numberView.setTypeface(numberView.typeface, Typeface.BOLD)
+        numberView = text(34f, GOLD, true)
         numberView.setBackgroundColor(0xCC000000.toInt())
         numberView.setPadding(dp(20), dp(8), dp(20), dp(8))
         val nlp = FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END)
@@ -291,51 +339,191 @@ class PlayerActivity : Activity() {
         seekPanel.orientation = LinearLayout.VERTICAL
         seekPanel.gravity = Gravity.CENTER_HORIZONTAL
         seekPanel.setPadding(dp(26), dp(14), dp(26), dp(16))
-        val sbg = GradientDrawable()
-        sbg.cornerRadius = dp(16).toFloat()
-        sbg.setColor(0xD9000000.toInt())
-        seekPanel.background = sbg
-        seekText = TextView(this)
-        seekText.setTextColor(GOLD)
-        seekText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
-        seekText.setTypeface(seekText.typeface, Typeface.BOLD)
+        seekPanel.background = rounded(0xD9000000.toInt(), 16)
+        seekText = text(26f, GOLD, true)
         seekText.gravity = Gravity.CENTER
         seekPanel.addView(seekText)
-        seekTime = TextView(this)
-        seekTime.setTextColor(Color.WHITE)
-        seekTime.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        seekTime = text(17f, Color.WHITE)
         seekTime.gravity = Gravity.CENTER
         seekTime.setPadding(0, dp(2), 0, dp(8))
         seekPanel.addView(seekTime)
         seekBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
         seekBar.max = 1000
-        seekBar.progressTintList = android.content.res.ColorStateList.valueOf(GOLD)
+        seekBar.progressTintList = ColorStateList.valueOf(GOLD)
         seekPanel.addView(seekBar, LinearLayout.LayoutParams(dp(300), dp(8)))
         root.addView(seekPanel, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         seekPanel.visibility = View.GONE
 
-        bottomBar.visibility = View.GONE
-        topBar.visibility = View.GONE
-        if (!live) {
-            view.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { vis ->
-                topBar.visibility = vis
-            })
-        }
+        hideBars()
         setContentView(root)
     }
 
-    private fun focusBg(normal: Int, focused: Int): StateListDrawable {
-        fun shape(c: Int, stroke: Boolean): GradientDrawable {
-            val g = GradientDrawable()
-            g.cornerRadius = dp(10).toFloat()
-            g.setColor(c)
-            if (stroke) g.setStroke(dp(2), GOLD)
-            return g
+    private fun buildLiveBars(root: FrameLayout) {
+        // Em cima: voltar (esquerda) e selo VIVO (direita)
+        liveTop = FrameLayout(this)
+        liveTop.setPadding(dp(18), dp(14), dp(18), dp(30))
+        liveTop.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x99000000.toInt(), 0x00000000))
+        val back = iconButton("↩") { finish() }
+        liveTop.addView(back, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
+        val vivo = badge("VIVO", RED)
+        vivo.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        liveTop.addView(vivo, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
+        root.addView(liveTop, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+
+        // Embaixo: logo do canal com ▲ ▼, nome, barra do programa, AO VIVO / A SEGUIR
+        liveInfo = LinearLayout(this)
+        liveInfo.orientation = LinearLayout.HORIZONTAL
+        liveInfo.gravity = Gravity.CENTER_VERTICAL
+        liveInfo.isClickable = true
+        liveInfo.setPadding(dp(20), dp(40), dp(20), dp(14))
+        liveInfo.background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xF0000000.toInt(), 0xB3000000.toInt(), 0x00000000))
+
+        val left = LinearLayout(this)
+        left.orientation = LinearLayout.VERTICAL
+        left.gravity = Gravity.CENTER_HORIZONTAL
+        val up = text(18f, 0xFFB0B0B8.toInt(), true); up.text = "▲"
+        up.setOnClickListener { changeChannel(-1) }
+        left.addView(up)
+        val logoBox = FrameLayout(this)
+        logoBox.background = rounded(0xFF26272D.toInt(), 4, 0x66FFFFFF)
+        logoImg = ImageView(this)
+        logoImg.scaleType = ImageView.ScaleType.FIT_CENTER
+        logoImg.setPadding(dp(8), dp(8), dp(8), dp(8))
+        logoBox.addView(logoImg, FrameLayout.LayoutParams(-1, -1))
+        logoTxt = text(22f, GOLD, true)
+        logoTxt.gravity = Gravity.CENTER
+        logoBox.addView(logoTxt, FrameLayout.LayoutParams(-1, -1))
+        left.addView(logoBox, LinearLayout.LayoutParams(dp(96), dp(96)))
+        val down = text(18f, 0xFFB0B0B8.toInt(), true); down.text = "▼"
+        down.setOnClickListener { changeChannel(1) }
+        left.addView(down)
+        liveInfo.addView(left)
+
+        val right = LinearLayout(this)
+        right.orientation = LinearLayout.VERTICAL
+        val row1 = LinearLayout(this)
+        row1.orientation = LinearLayout.HORIZONTAL
+        row1.gravity = Gravity.CENTER_VERTICAL
+        chName = text(30f, Color.WHITE)
+        row1.addView(chName, lp(0, -2, 1f))
+        val pills = LinearLayout(this)
+        pills.orientation = LinearLayout.HORIZONTAL
+        pills.setPadding(dp(6), dp(5), dp(6), dp(5))
+        pills.background = rounded(0x99303138.toInt(), 30)
+        listBtn = pillButton("☰  Lista") { openList() }
+        pills.addView(listBtn)
+        pills.addView(pillButton("⛶  Tela") { cycleResize() })
+        row1.addView(pills)
+        right.addView(row1)
+
+        progNow = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        progNow.max = 1000
+        progNow.progressTintList = ColorStateList.valueOf(GOLD)
+        progNow.progressBackgroundTintList = ColorStateList.valueOf(0xFF55565E.toInt())
+        right.addView(progNow, lp(-1, dp(6), 0f, 0, dp(8), 0, dp(10)))
+
+        val row3 = LinearLayout(this)
+        row3.orientation = LinearLayout.HORIZONTAL
+        row3.gravity = Gravity.CENTER_VERTICAL
+        row3.addView(badge("AO VIVO", RED))
+        nowTime = chip()
+        row3.addView(nowTime, lp(-2, -2, 0f, dp(10), 0, dp(10), 0))
+        nowTitle = text(19f, Color.WHITE)
+        row3.addView(nowTitle, lp(0, -2, 1f, 0, 0, dp(14), 0))
+        nextBadge = badge("A SEGUIR", 0xFF6B6C74.toInt())
+        row3.addView(nextBadge)
+        nextTime = chip()
+        row3.addView(nextTime, lp(-2, -2, 0f, dp(10), 0, dp(10), 0))
+        nextTitle = text(19f, Color.WHITE)
+        row3.addView(nextTitle, lp(0, -2, 1f))
+        right.addView(row3)
+        liveInfo.addView(right, lp(0, -2, 1f, dp(18), 0, 0, 0))
+        root.addView(liveInfo, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+    }
+
+    private fun buildVodBars(root: FrameLayout) {
+        // Em cima: ↩  VOD: nome ............ Clique ▼ ou ☰ para mais opções
+        vodTop = LinearLayout(this)
+        vodTop.orientation = LinearLayout.HORIZONTAL
+        vodTop.gravity = Gravity.CENTER_VERTICAL
+        vodTop.isClickable = true
+        vodTop.setPadding(dp(18), dp(12), dp(22), dp(30))
+        vodTop.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xE6000000.toInt(), 0x00000000))
+        vodTop.addView(iconButton("↩") { finish() })
+        titleView = text(22f, Color.WHITE)
+        titleView.setPadding(dp(12), 0, dp(12), 0)
+        vodTop.addView(titleView, lp(0, -2, 1f))
+        val hint = text(17f, Color.WHITE)
+        hint.text = "Clique ▼ ou ☰ para mais opções"
+        vodTop.addView(hint)
+        root.addView(vodTop, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+
+        // Embaixo: ❚❚ 00:04 ━━━━━━ 45:09  e o ▼ (Tela / episódios)
+        vodBottom = LinearLayout(this)
+        vodBottom.orientation = LinearLayout.VERTICAL
+        vodBottom.isClickable = true
+        vodBottom.setPadding(dp(22), dp(34), dp(22), dp(6))
+        vodBottom.background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xE6000000.toInt(), 0x00000000))
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.gravity = Gravity.CENTER_VERTICAL
+        playBtn = iconButton("❚❚") { togglePlay() }
+        playBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
+        bar.addView(playBtn)
+        posText = text(20f, Color.WHITE)
+        posText.text = "00:00"
+        bar.addView(posText, lp(-2, -2, 0f, dp(12), 0, dp(10), 0))
+        timeBar = SeekBar(this)
+        timeBar.max = 1000
+        timeBar.isFocusable = false
+        timeBar.progressTintList = ColorStateList.valueOf(Color.WHITE)
+        timeBar.thumbTintList = ColorStateList.valueOf(Color.WHITE)
+        timeBar.progressBackgroundTintList = ColorStateList.valueOf(0x88FFFFFF.toInt())
+        timeBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
+                if (fromUser && ::player.isInitialized && player.duration > 0) posText.text = fmt(player.duration * p / 1000)
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) { dragging = true; handler.removeCallbacksAndMessages("hide") }
+            override fun onStopTrackingTouch(sb: SeekBar) {
+                dragging = false
+                if (::player.isInitialized && player.duration > 0) player.seekTo(player.duration * sb.progress / 1000)
+                scheduleHide()
+            }
+        })
+        bar.addView(timeBar, lp(0, -2, 1f))
+        durText = text(20f, Color.WHITE)
+        durText.text = "00:00"
+        bar.addView(durText, lp(-2, -2, 0f, dp(10), 0, 0, 0))
+        vodBottom.addView(bar)
+
+        optionsRow = LinearLayout(this)
+        optionsRow.orientation = LinearLayout.HORIZONTAL
+        optionsRow.gravity = Gravity.CENTER
+        optionsRow.setPadding(0, dp(8), 0, dp(2))
+        if (series) {
+            optionsRow.addView(button("⏮  Ep. anterior") { changeEpisode(-1) })
+            optionsRow.addView(button("Próximo ep.  ⏭") { changeEpisode(1) })
         }
+        optionsRow.addView(button("⛶  Tela") { cycleResize() })
+        optionsRow.visibility = View.GONE
+        vodBottom.addView(optionsRow, lp(-1, -2))
+
+        moreBtn = text(20f, Color.WHITE)
+        moreBtn.text = "▼"
+        moreBtn.gravity = Gravity.CENTER
+        moreBtn.setPadding(dp(30), 0, dp(30), 0)
+        moreBtn.setOnClickListener { if (optionsRow.visibility == View.VISIBLE) hideOptions() else showOptions() }
+        val mlp = lp(-2, -2)
+        mlp.gravity = Gravity.CENTER_HORIZONTAL
+        vodBottom.addView(moreBtn, mlp)
+        root.addView(vodBottom, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+    }
+
+    private fun focusBg(normal: Int, focused: Int): StateListDrawable {
         val s = StateListDrawable()
-        s.addState(intArrayOf(android.R.attr.state_focused), shape(focused, true))
-        s.addState(intArrayOf(android.R.attr.state_pressed), shape(focused, true))
-        s.addState(intArrayOf(), shape(normal, false))
+        s.addState(intArrayOf(android.R.attr.state_focused), rounded(focused, 10, GOLD))
+        s.addState(intArrayOf(android.R.attr.state_pressed), rounded(focused, 10, GOLD))
+        s.addState(intArrayOf(), rounded(normal, 10))
         return s
     }
 
@@ -356,31 +544,196 @@ class PlayerActivity : Activity() {
         return b
     }
 
-    private fun barsVisible() = topBar.visibility == View.VISIBLE
+    /** Botão só com ícone (voltar, play/pause). */
+    private fun iconButton(icon: String, action: () -> Unit): TextView {
+        val b = button(icon, action)
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+        b.setPadding(dp(12), dp(4), dp(12), dp(4))
+        b.background = focusBg(0x00000000, 0x66F7BF1A)
+        return b
+    }
+
+    /** Botões arredondados do grupo da TV ao vivo (Lista / Tela). */
+    private fun pillButton(t: String, action: () -> Unit): TextView {
+        val b = button(t, action)
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        b.setPadding(dp(18), dp(8), dp(18), dp(8))
+        val s = StateListDrawable()
+        s.addState(intArrayOf(android.R.attr.state_focused), rounded(0x33FFFFFF, 30, GOLD))
+        s.addState(intArrayOf(android.R.attr.state_pressed), rounded(0x33FFFFFF, 30, GOLD))
+        s.addState(intArrayOf(), rounded(0x00000000, 30))
+        b.background = s
+        val lp = LinearLayout.LayoutParams(-2, -2)
+        lp.setMargins(dp(3), 0, dp(3), 0)
+        b.layoutParams = lp
+        return b
+    }
+
+    private fun barsVisible() = if (live) liveInfo.visibility == View.VISIBLE else vodBottom.visibility == View.VISIBLE
 
     private fun showBars() {
-        topBar.visibility = View.VISIBLE
-        if (live) bottomBar.visibility = View.VISIBLE else view.showController()
+        if (live) {
+            liveTop.visibility = View.VISIBLE
+            liveInfo.visibility = View.VISIBLE
+            refreshLiveInfo()
+        } else {
+            vodTop.visibility = View.VISIBLE
+            vodBottom.visibility = View.VISIBLE
+            updateProgress()
+            handler.removeCallbacksAndMessages("tick")
+            handler.postAtTime({ tick() }, "tick", SystemClock.uptimeMillis() + 500)
+        }
         scheduleHide()
     }
 
     private fun hideBars() {
         if (listPanel.visibility == View.VISIBLE) return
-        topBar.visibility = View.GONE
-        bottomBar.visibility = View.GONE
-        if (!live) view.hideController()
+        if (dragging) return
+        val hadFocus = liveTop.findFocus() != null || liveInfo.findFocus() != null || vodTop.findFocus() != null || vodBottom.findFocus() != null
+        liveTop.visibility = View.GONE
+        liveInfo.visibility = View.GONE
+        vodTop.visibility = View.GONE
+        vodBottom.visibility = View.GONE
+        optionsRow.visibility = View.GONE
+        handler.removeCallbacksAndMessages("tick")
+        if (hadFocus) backToVideo()
     }
 
     private fun scheduleHide() {
         handler.removeCallbacksAndMessages("hide")
-        if (live) handler.postAtTime({ hideBars() }, "hide", SystemClock.uptimeMillis() + 4000)
+        handler.postAtTime({ hideBars() }, "hide", SystemClock.uptimeMillis() + 5000)
     }
+
+    private fun showOptions() {
+        showBars()
+        optionsRow.visibility = View.VISIBLE
+        moreBtn.text = "▲"
+        optionsRow.getChildAt(0)?.requestFocus()
+    }
+
+    private fun hideOptions() {
+        optionsRow.visibility = View.GONE
+        moreBtn.text = "▼"
+        backToVideo()
+        scheduleHide()
+    }
+
+    private fun togglePlay() {
+        if (!::player.isInitialized) return
+        player.playWhenReady = !player.playWhenReady
+        updatePlayIcon()
+        showBars()
+    }
+
+    private fun updatePlayIcon() {
+        if (!::player.isInitialized) return
+        playBtn.text = if (player.playWhenReady) "❚❚" else "▶"
+    }
+
+    private fun updateProgress() {
+        if (live || !::player.isInitialized) return
+        val d = player.duration
+        val p = player.currentPosition
+        if (!dragging) {
+            posText.text = fmt(p)
+            timeBar.progress = if (d > 0) ((p * 1000) / d).toInt() else 0
+            timeBar.secondaryProgress = if (d > 0) ((player.bufferedPosition * 1000) / d).toInt() else 0
+        }
+        durText.text = if (d > 0) fmt(d) else "--:--"
+        updatePlayIcon()
+    }
+
+    private fun tick() {
+        if (live || vodBottom.visibility != View.VISIBLE) return
+        updateProgress()
+        handler.postAtTime({ tick() }, "tick", SystemClock.uptimeMillis() + 500)
+    }
+
+    // ------------------------------------------------------------ TV ao vivo: logo e guia (AO VIVO / A SEGUIR)
+    private fun refreshLiveInfo() {
+        val i = index
+        chName.text = titles.getOrElse(i) { "" }
+        logoTxt.text = "${i + 1}"
+        val logo = logos.getOrElse(i) { "" }
+        val cached = logoCache[logo]
+        logoImg.setImageBitmap(cached)
+        logoTxt.visibility = if (cached != null) View.GONE else View.VISIBLE
+        if (logo.isNotEmpty() && !logoCache.containsKey(logo)) {
+            Thread {
+                val bmp = try {
+                    val c = URL(logo).openConnection() as HttpURLConnection
+                    c.connectTimeout = 8000; c.readTimeout = 10000
+                    c.instanceFollowRedirects = true
+                    c.setRequestProperty("User-Agent", USER_AGENT)
+                    c.inputStream.use { BitmapFactory.decodeStream(it) }
+                } catch (e: Exception) { null }
+                runOnUiThread {
+                    logoCache[logo] = bmp
+                    if (index == i && !isFinishing) {
+                        logoImg.setImageBitmap(bmp)
+                        logoTxt.visibility = if (bmp != null) View.GONE else View.VISIBLE
+                    }
+                }
+            }.start()
+        }
+        nowTime.text = "--:--"
+        nowTitle.text = chName.text
+        progNow.progress = 0
+        setNext(null, null)
+        val id = ids.getOrElse(i) { "" }
+        if (epgBase.isEmpty() || id.isEmpty()) return
+        Thread {
+            var now: Array<Any>? = null
+            var next: Array<Any>? = null
+            try {
+                val c = URL(epgBase + id).openConnection() as HttpURLConnection
+                c.connectTimeout = 8000; c.readTimeout = 10000
+                c.setRequestProperty("User-Agent", USER_AGENT)
+                val body = c.inputStream.bufferedReader().use { it.readText() }
+                val arr = JSONObject(body).optJSONArray("epg_listings")
+                val t = System.currentTimeMillis() / 1000
+                if (arr != null) for (k in 0 until arr.length()) {
+                    val e = arr.getJSONObject(k)
+                    val s = e.optString("start_timestamp", "0").toLongOrNull() ?: 0L
+                    val f = e.optString("stop_timestamp", "0").toLongOrNull() ?: 0L
+                    val title = try { String(Base64.decode(e.optString("title", ""), Base64.DEFAULT), Charsets.UTF_8) } catch (x: Exception) { e.optString("title", "") }
+                    if (f <= t) continue
+                    if (now == null && s <= t) now = arrayOf<Any>(s, f, title)
+                    else if (next == null && s >= t) { next = arrayOf<Any>(s, f, title); if (now != null) break }
+                    if (now != null && next != null) break
+                }
+            } catch (e: Exception) { }
+            runOnUiThread {
+                if (index != i || isFinishing) return@runOnUiThread
+                val n = now
+                if (n != null) {
+                    val s = n[0] as Long; val f = n[1] as Long
+                    nowTime.text = "${hhmm(s)}-${hhmm(f)}"
+                    nowTitle.text = n[2] as String
+                    val t = System.currentTimeMillis() / 1000
+                    progNow.progress = if (f > s) (((t - s) * 1000) / (f - s)).toInt().coerceIn(0, 1000) else 0
+                }
+                setNext(next, n)
+            }
+        }.start()
+    }
+
+    private fun setNext(next: Array<Any>?, now: Array<Any>?) {
+        val vis = if (next != null) View.VISIBLE else View.GONE
+        nextBadge.visibility = vis; nextTime.visibility = vis; nextTitle.visibility = vis
+        if (next != null) {
+            nextTime.text = "${hhmm(next[0] as Long)}-${hhmm(next[1] as Long)}"
+            nextTitle.text = next[2] as String
+        }
+    }
+
+    private fun hhmm(ts: Long): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts * 1000))
 
     private fun openList() {
         handler.removeCallbacksAndMessages("hide")
         listPanel.visibility = View.VISIBLE
-        topBar.visibility = View.GONE
-        bottomBar.visibility = View.GONE
+        liveTop.visibility = View.GONE
+        liveInfo.visibility = View.GONE
         (listView.adapter as ArrayAdapter<*>).notifyDataSetChanged()
         listView.setSelection(maxOf(0, index - 3))
         listView.post {
@@ -397,9 +750,9 @@ class PlayerActivity : Activity() {
     private fun start(resume: Boolean) {
         triedAlt = false
         val name = titles.getOrElse(index) { "" }
-        titleView.text = if (live) "${index + 1}  •  $name" else name
+        titleView.text = "VOD: $name"
         playUri(urls[index], resume)
-        if (live) showBars()
+        showBars()
         saveWatch(getPreferences(MODE_PRIVATE).getLong(urls[index], 0L), -1L)
     }
 
@@ -416,7 +769,7 @@ class PlayerActivity : Activity() {
         if (d > 0 && p > d - 60000) savePosition(0) else savePosition(p)
         index = next
         start(true)
-        view.showController()
+        showBars()
         Toast.makeText(this, titles.getOrElse(index) { "" }, Toast.LENGTH_SHORT).show()
     }
 
@@ -534,14 +887,18 @@ class PlayerActivity : Activity() {
         val down = event.action == KeyEvent.ACTION_DOWN
         if (code == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) {
-                if (listPanel.visibility == View.VISIBLE) closeList() else finish()
+                when {
+                    listPanel.visibility == View.VISIBLE -> closeList()
+                    !live && optionsRow.visibility == View.VISIBLE -> hideOptions()
+                    else -> finish()
+                }
             }
             return true
         }
         if (listPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
 
         if (live) {
-            val focusInBars = barsVisible() && (topBar.findFocus() != null || bottomBar.findFocus() != null)
+            val focusInBars = barsVisible() && (liveTop.findFocus() != null || liveInfo.findFocus() != null)
             if (down) {
                 if (focusInBars) {
                     scheduleHide()
@@ -554,7 +911,7 @@ class PlayerActivity : Activity() {
                     KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MENU -> { cycleResize(); return true }
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_INFO -> {
                         showBars()
-                        bottomBar.getChildAt(1)?.requestFocus()
+                        listBtn.requestFocus()
                         return true
                     }
                 }
@@ -571,8 +928,8 @@ class PlayerActivity : Activity() {
         }
 
         // Filmes e séries
-        if (down && code == KeyEvent.KEYCODE_MENU) { cycleResize(); return true }
         when (code) {
+            KeyEvent.KEYCODE_MENU -> { if (down && event.repeatCount == 0) { if (optionsRow.visibility == View.VISIBLE) hideOptions() else showOptions() }; return true }
             KeyEvent.KEYCODE_MEDIA_NEXT -> { if (down && event.repeatCount == 0) changeEpisode(1); return true }
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { if (down && event.repeatCount == 0) changeEpisode(-1); return true }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (down) seekBy(30000); return true }
@@ -580,52 +937,51 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 if (down && event.repeatCount == 0) {
                     player.playWhenReady = if (code == KeyEvent.KEYCODE_MEDIA_PLAY) true else if (code == KeyEvent.KEYCODE_MEDIA_PAUSE) false else !player.playWhenReady
-                    view.showController()
+                    showBars()
                 }
                 return true
             }
         }
-        // Setas para os lados adiantam/voltam (menos quando está nos botões de cima)
-        if (topBar.findFocus() == null && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+        val inTop = vodTop.findFocus() != null
+        val inOptions = optionsRow.findFocus() != null
+        // Nos botões (voltar em cima / opções embaixo): setas para os lados andam entre eles
+        if (inTop || inOptions) {
+            if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (down) { if (inTop) backToVideo() }
+                return true
+            }
+            if (code == KeyEvent.KEYCODE_DPAD_UP) {
+                if (down && inOptions) hideOptions()
+                return true
+            }
+            scheduleHide()
+            return super.dispatchKeyEvent(event)
+        }
+        // Setas para os lados adiantam/voltam
+        if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
             if (down) {
                 val step = stepFor(event.repeatCount)
                 seekBy(if (code == KeyEvent.KEYCODE_DPAD_RIGHT) step else -step)
             }
             return true
         }
-        // OK do controle: pausa / continua e mostra a barra
-        if (topBar.findFocus() == null && (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER)) {
+        // OK do controle: mostra a barra; com a barra aberta, pausa / continua
+        if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) {
             if (down && event.repeatCount == 0) {
-                if (!view.isControllerFullyVisible) {
-                    view.showController()
-                } else {
-                    player.playWhenReady = !player.playWhenReady
-                    view.showController()
-                }
+                if (!barsVisible()) showBars() else togglePlay()
             }
             return true
         }
-        // Botões de cima (Voltar / Tela): setas para os lados andam entre eles, seta para baixo volta ao vídeo
-        if (topBar.findFocus() != null) {
-            if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                if (down) backToVideo()
-                return true
-            }
-            if (code == KeyEvent.KEYCODE_DPAD_UP) return true
-            view.showController()
-            return super.dispatchKeyEvent(event)
-        }
-        // Seta para baixo: só mostra a barra do tempo (não entra nos botões do player, que travava o controle)
+        // Seta para baixo: mostra a barra; com a barra aberta, abre as opções (Tela / episódios)
         if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
-            if (down) backToVideo()
+            if (down && event.repeatCount == 0) { if (!barsVisible()) showBars() else showOptions() }
             return true
         }
         // Seta para cima: mostra a barra e vai para o botão Voltar
         if (code == KeyEvent.KEYCODE_DPAD_UP) {
             if (down && event.repeatCount == 0) {
-                view.showController()
-                topBar.visibility = View.VISIBLE
-                topBar.getChildAt(0)?.requestFocus()
+                showBars()
+                vodTop.getChildAt(0)?.requestFocus()
             }
             return true
         }
@@ -634,8 +990,7 @@ class PlayerActivity : Activity() {
 
     /** Tira o foco dos botões e deixa o controle no vídeo (setas = adiantar/voltar, OK = pausar). */
     private fun backToVideo() {
-        view.showController()
-        topBar.findFocus()?.clearFocus()
+        currentFocus?.clearFocus()
         view.isFocusable = true
         view.isFocusableInTouchMode = false
         view.requestFocus()
