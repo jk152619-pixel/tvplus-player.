@@ -111,14 +111,24 @@
     if (!f.length || f.indexOf("ts") >= 0) return "ts";
     return "m3u8";
   }
-  function play(urls, titles, index, live, key, tags) {
+  function play(urls, titles, index, live, key, tags, extra) {
     var data = { urls: urls, titles: titles, index: index || 0, live: !!live };
+    if (extra) for (var xk in extra) data[xk] = extra[xk];
     if (key) {
       data.key = key; data.tags = tags || [];
       var w = load("watch", {}); w[key] = { tag: (tags || [])[index || 0] || String(index || 0), title: titles[index || 0], pos: 0, dur: -1, t: Date.now() }; save("watch", w);
     }
     if (isNative) window.Native.play(JSON.stringify(data));
     else toast("▶ " + titles[index || 0] + " (o vídeo abre no app instalado)");
+  }
+
+  // TV ao vivo: manda junto a logo e o código de cada canal (o player mostra AO VIVO / A SEGUIR)
+  function playLive(list, i) {
+    play(list.map(function (c) { return streamUrl("live", c.stream_id, liveExt()); }), list.map(function (c) { return c.name; }), i || 0, true, null, null, {
+      ids: list.map(function (c) { return String(c.stream_id); }),
+      logos: list.map(function (c) { return c.stream_icon || ""; }),
+      epg: baseApi(creds.dns, creds.user, creds.pass) + "&action=get_short_epg&limit=4&stream_id="
+    });
   }
 
   function tryLogin(user, pass) {
@@ -545,6 +555,18 @@
     return out;
   }
 
+  // Atalhos das plataformas: diminui o tamanho para todos caberem na tela, sem cortar
+  function fitPlats() {
+    var box = $app.querySelector(".plats"); if (!box) return;
+    var b = box.querySelectorAll(".plat"), n = b.length; if (!n) return;
+    var W = box.clientWidth - 56, max = 100, minGap = 12;
+    var size = Math.max(44, Math.min(max, Math.floor((W - minGap * (n - 1)) / n)));
+    var gap = n > 1 ? Math.max(minGap, Math.min(26, Math.floor((W - size * n) / (n - 1)))) : 0;
+    box.style.gap = gap + "px";
+    for (var i = 0; i < n; i++) { b[i].style.width = b[i].style.height = size + "px"; b[i].style.fontSize = Math.max(8, Math.round(size * 0.12)) + "px"; }
+  }
+  window.addEventListener("resize", function () { setTimeout(fitPlats, 50); });
+
   // ---------- Início ----------
   function homeScreen() {
     return {
@@ -553,16 +575,16 @@
         var self = this;
         $app.innerHTML = frame("home",
           '<div class="hhead"><img class="hlogo" src="logo.png" alt=""><span>' + ICON.user + " " + esc(creds.user) + '</span><span>' + ICON.calsm + " " + esc(fmtDate(account && account.exp_date)) + '</span><span class="clock">' + clock() + "</span></div>" +
-          '<button class="banner focusable" data-k="banner"><div class="bimg"></div><div class="btxt"><b>TVPlus+</b><small>Carregando destaques...</small></div><div class="dots"></div></button>' +
+          '<button class="banner focusable" data-k="banner"><div class="bblur"></div><div class="bimg"></div><div class="btxt"><b>TVPlus+</b><small>Carregando destaques...</small></div><div class="dots"></div></button>' +
           '<div class="plats"></div>' + payFoot());
         bindRail("home");
         var pf = $app.querySelector(".payfoot"); if (pf) pf.onclick = function () { go(pixScreen()); };
         var slides = [], si = 0;
-        var bimg = $app.querySelector(".bimg"), bt = $app.querySelector(".btxt b"), bs = $app.querySelector(".btxt small"), dots = $app.querySelector(".dots");
+        var bimg = $app.querySelector(".bimg"), bblur = $app.querySelector(".bblur"), bt = $app.querySelector(".btxt b"), bs = $app.querySelector(".btxt small"), dots = $app.querySelector(".dots");
         function slide() {
           if (!slides.length || !document.body.contains(bimg)) return;
           var n = si % slides.length, s = slides[n]; si++;
-          bimg.style.backgroundImage = "url('" + s.img.replace(/'/g, "%27") + "')"; bt.textContent = s.name; bs.textContent = s.type === "series" ? "Série · OK para abrir" : "Filme · OK para assistir";
+          bimg.style.backgroundImage = bblur.style.backgroundImage = "url('" + s.img.replace(/'/g, "%27") + "')"; bt.textContent = s.name; bs.textContent = s.type === "series" ? "Série · OK para abrir" : "Filme · OK para assistir";
           dots.innerHTML = slides.map(function (x, i) { return "<i" + (i === n ? ' class="on"' : "") + "></i>"; }).join("");
           $app.querySelector(".banner").onclick = function () { openItem(s.type, s.it); };
         }
@@ -571,6 +593,7 @@
           box.innerHTML = pl.map(function (p) { return '<button class="plat focusable p-' + p[0] + '" data-k="pl-' + p[0] + '" data-g="' + p[0] + '"><span>' + esc(p[1]) + "</span></button>"; }).join("");
           var b = box.querySelectorAll(".plat");
           for (var i = 0; i < b.length; i++) b[i].onclick = function () { go(vodScreen(this.getAttribute("data-g"))); };
+          fitPlats();
         }
         var hc = load("home_cache", null), started = false, tmr = 0;
         function startSlides() {
@@ -673,7 +696,7 @@
               ch[k].onclick = function () {
                 var i2 = Number(this.getAttribute("data-i")), c = list[i2];
                 addHist({ k: "l" + c.stream_id, type: "live", name: c.name, img: c.stream_icon, id: c.stream_id });
-                play(urls, names, i2, true);
+                playLive(list, i2);
               };
               ch[k].onfocusnav = (function (c) { return function () { guide(c); }; })(list[k]);
               ch[k].oncontextmenu = (function (c, el) { return function (e) { e.preventDefault(); var on = toggleFav("live", c, c.stream_id); el.querySelector("b").textContent = c.name + (on ? " ★" : ""); }; })(list[k], ch[k]);
@@ -815,27 +838,65 @@
     };
   }
   function openItem(type, it) {
-    if (type === "movie") {
-      var ext = it.container_extension || "mp4";
-      addHist({ k: "m" + it.stream_id, type: "movie", name: it.name, img: it.stream_icon, it: it });
-      var mk = "m" + it.stream_id, mw = lastWatched(mk);
-      if (mw && mw.pos > 10000) toast("▶ Continuando de " + fmtTime(mw.pos), 3500);
-      play([streamUrl("movie", it.stream_id, ext)], [it.name], 0, false, mk, ["0"]);
-    } else go(seriesScreen(it));
+    if (type === "movie") go(movieScreen(it)); else go(seriesScreen(it));
+  }
+  function pad(n, l) { n = String(n); while (n.length < l) n = "0" + n; return n; }
+  // Tela de detalhes no modelo P2P: capa à esquerda, título, nota | ano | gênero, sinopse, Reproduzir / Favoritos
+  function detailHtml(o) {
+    var meta = [];
+    if (o.rating && Number(o.rating) > 0) meta.push('<span class="vr">★ ' + esc(Number(o.rating).toFixed(1)) + "</span>");
+    var yr = String(o.year || "").match(/\d{4}/); if (yr) meta.push('<span class="vy">' + yr[0] + "</span>");
+    if (o.genre) meta.push('<span class="vg">' + esc(String(o.genre).split(/[,\/]/)[0].trim()) + "</span>");
+    return '<div class="detail vd">' + (o.bd ? '<div class="vdbg"' + bg(o.bd) + "></div>" : "") + '<div class="vdshade"></div>' +
+      '<div class="vdpost"' + bg(o.cover) + '></div>' +
+      '<div class="vdinfo"><h1>' + esc(o.name) + '</h1><div class="vmeta">' + meta.join('<i class="vsep">|</i>') + '</div>' +
+      '<p class="vplot">' + esc(o.plot || "") + '</p>' +
+      '<div class="vbtns"><button class="vbtn vplay focusable" data-k="vplay">▶&nbsp; Reproduzir</button><button class="vbtn vfav focusable" data-k="vfav"></button></div>' +
+      (o.extra || "") + "</div></div>";
+  }
+  function setFavBtn(b, on) { b.innerHTML = on ? "★&nbsp; Nos favoritos" : "+&nbsp; Favoritos"; b.classList.toggle("on", on); }
+  function movieScreen(it) {
+    var info = null;
+    return {
+      name: "movie",
+      render: function (back) {
+        var self = this, i = (info && info.info) || {};
+        var cover = i.movie_image || i.cover_big || it.stream_icon, bd = (i.backdrop_path && i.backdrop_path[0]) || "";
+        $app.innerHTML = frame("vod", detailHtml({ name: it.name, cover: cover, bd: bd, rating: i.rating || it.rating, year: i.releasedate || i.release_date || it.year || it.name, genre: i.genre, plot: i.plot || i.description || (info ? "" : "Carregando informações...") }));
+        bindRail("vod");
+        var favB = $app.querySelector(".vfav"), playB = $app.querySelector(".vplay"), mk = "m" + it.stream_id, mw = lastWatched(mk);
+        setFavBtn(favB, isFav("movie", it.stream_id));
+        favB.onclick = function () { toggleFav("movie", it, it.stream_id); setFavBtn(favB, isFav("movie", it.stream_id)); };
+        if (mw && mw.pos > 10000) playB.innerHTML = "▶&nbsp; Continuar (" + fmtTime(mw.pos) + ")";
+        playB.onclick = function () {
+          addHist({ k: mk, type: "movie", name: it.name, img: it.stream_icon, it: it });
+          play([streamUrl("movie", it.stream_id, it.container_extension || "mp4")], [it.name], 0, false, mk, ["0"]);
+        };
+        if (back) restore(self, ".vplay"); else focusEl(playB);
+        if (!info) api("get_vod_info", "&vod_id=" + it.stream_id).then(function (d) {
+          info = d || {};
+          if (current === self && document.body.contains(playB)) { var f = activeKey(); self.render(); var el = f && $app.querySelector('[data-k="' + f + '"]'); if (el) focusEl(el); }
+        }, function () { info = {}; var p = $app.querySelector(".vplot"); if (p) p.textContent = ""; });
+      }
+    };
   }
   function seriesScreen(it) {
     var data = null, season = null;
     return {
       name: "series",
       render: function (back) {
-        var self = this;
-        var bd = it.backdrop_path && it.backdrop_path[0];
-        $app.innerHTML = frame("vod", '<div class="detail"' + bg(bd) + '><div class="dshade"></div><div class="dhead"><div class="poster"' + bg(it.cover) + '></div><div><h1>' + esc(it.name) + '</h1><div class="meta">' + esc([it.releaseDate || it.year, it.genre, it.rating ? "★ " + it.rating : ""].filter(Boolean).join(" · ")) + '</div><p>' + esc(it.plot || "") + '</p><button class="btn-fav focusable" data-k="sfav">' + (isFav("series", it.series_id) ? "★ Nos favoritos" : "☆ Favoritar") + '</button></div></div><div class="cont"></div><div class="seasons"></div><div class="eps"><div class="empty">Carregando episódios...</div></div></div>');
+        var self = this, inf = (data && data.info) || {};
+        var bd = (it.backdrop_path && it.backdrop_path[0]) || (inf.backdrop_path && inf.backdrop_path[0]) || "";
+        $app.innerHTML = frame("vod", detailHtml({ name: it.name, cover: it.cover || inf.cover, bd: bd, rating: it.rating || inf.rating, year: it.releaseDate || it.year || inf.releaseDate || it.name, genre: it.genre || inf.genre, plot: it.plot || inf.plot,
+          extra: '<div class="vseas"></div><div class="veps"><div class="empty">Carregando episódios...</div></div>' }));
         bindRail("vod");
-        $app.querySelector(".btn-fav").onclick = function () { toggleFav("series", it, it.series_id); this.textContent = isFav("series", it.series_id) ? "★ Nos favoritos" : "☆ Favoritar"; };
+        var favB = $app.querySelector(".vfav"), playB = $app.querySelector(".vplay");
+        setFavBtn(favB, isFav("series", it.series_id));
+        favB.onclick = function () { toggleFav("series", it, it.series_id); setFavBtn(favB, isFav("series", it.series_id)); };
+        playB.onclick = function () { toast("Carregando episódios..."); };
         function draw() {
           var eps = (data && data.episodes) || {}, keys = Object.keys(eps).sort(function (a, b) { return a - b; });
-          if (!keys.length) { $app.querySelector(".eps").innerHTML = '<div class="empty">Sem episódios</div>'; return; }
+          if (!keys.length) { $app.querySelector(".veps").innerHTML = '<div class="empty">Sem episódios</div>'; return; }
           // Todas as temporadas em sequência: assim "próximo/anterior" passa de uma temporada para a outra
           var allUrls = [], allNames = [], allTags = [];
           keys.forEach(function (k) { (eps[k] || []).forEach(function (e, i) {
@@ -846,31 +907,33 @@
           var skey = "s" + it.series_id, lw = lastWatched(skey), lwIdx = lw ? allTags.indexOf(lw.tag) : -1;
           if (lwIdx >= 0 && !season) season = lw.tag.split("|")[0];
           if (!season || !eps[season]) season = keys[0];
-          var cont = $app.querySelector(".cont");
+          function go2(idx) { addHist({ k: skey, type: "series", name: it.name, img: it.cover, it: it }); play(allUrls, allNames, idx, false, skey, allTags); }
           if (lwIdx >= 0) {
             var lp = lw.tag.split("|"), le = (eps[lp[0]] || [])[Number(lp[1])] || {};
-            var where = "Temporada " + lp[0] + " · Episódio " + (le.episode_num || Number(lp[1]) + 1) + (lw.pos > 10000 ? " · parou em " + fmtTime(lw.pos) : "");
-            cont.innerHTML = '<button class="contb focusable" data-k="cont"><b>▶ Continuar assistindo</b><span>' + esc(where) + "</span></button>";
-            cont.querySelector(".contb").onclick = function () {
-              addHist({ k: skey, type: "series", name: it.name, img: it.cover, it: it });
-              play(allUrls, allNames, lwIdx, false, skey, allTags);
-            };
-          } else cont.innerHTML = "";
-          $app.querySelector(".seasons").innerHTML = keys.map(function (k) { return '<button class="sbtn focusable' + (k === season ? " on" : "") + '" data-k="s-' + k + '" data-s="' + k + '">Temporada ' + k + "</button>"; }).join("");
+            playB.innerHTML = "▶&nbsp; Continuar S" + pad(lp[0], 2) + "E" + pad(le.episode_num || Number(lp[1]) + 1, 3) + (lw.pos > 10000 ? " (" + fmtTime(lw.pos) + ")" : "");
+            playB.onclick = function () { go2(lwIdx); };
+          } else { playB.innerHTML = "▶&nbsp; Reproduzir"; playB.onclick = function () { go2(0); }; }
+          var sv = $app.querySelector(".vseas");
+          sv.innerHTML = keys.length > 1 ? keys.map(function (k) { return '<button class="vsea focusable' + (k === season ? " on" : "") + '" data-k="s-' + k + '" data-s="' + k + '">Temporada ' + k + "</button>"; }).join("") : "";
           var list = eps[season] || [];
-          $app.querySelector(".eps").innerHTML = list.map(function (e, i) { var cur = lwIdx >= 0 && lw.tag === season + "|" + i; return '<button class="epb focusable' + (cur ? " cur" : "") + '" data-k="e-' + e.id + '" data-i="' + i + '"><b>' + (e.episode_num || i + 1) + "</b> " + esc(e.title || "Episódio " + (i + 1)) + (cur ? '<em>▶ parou aqui</em>' : "") + "</button>"; }).join("");
-          var sb = $app.querySelectorAll(".sbtn");
-          for (var i = 0; i < sb.length; i++) sb[i].onclick = function () { season = this.getAttribute("data-s"); draw(); focusEl($app.querySelector(".epb")); };
-          var eb = $app.querySelectorAll(".epb");
-          for (var j = 0; j < eb.length; j++) eb[j].onclick = function () {
-            addHist({ k: skey, type: "series", name: it.name, img: it.cover, it: it });
-            play(allUrls, allNames, allTags.indexOf(season + "|" + this.getAttribute("data-i")), false, skey, allTags);
-          };
+          $app.querySelector(".veps").innerHTML = list.map(function (e, i) {
+            var cur = lwIdx >= 0 && lw.tag === season + "|" + i;
+            return '<button class="vep focusable' + (cur ? " cur" : "") + '" data-k="e-' + e.id + '" data-i="' + i + '" title="' + esc(e.title || "") + '">S' + pad(season, 2) + "E" + pad(e.episode_num || i + 1, 3) + "</button>";
+          }).join("");
+          var sb = $app.querySelectorAll(".vsea");
+          for (var i = 0; i < sb.length; i++) sb[i].onclick = function () { season = this.getAttribute("data-s"); draw(); focusEl($app.querySelector(".vsea.on") || $app.querySelector(".vep")); };
+          var eb = $app.querySelectorAll(".vep");
+          for (var j = 0; j < eb.length; j++) eb[j].onclick = function () { go2(allTags.indexOf(season + "|" + this.getAttribute("data-i"))); };
         }
-        if (data) { season = null; draw(); focusEl($app.querySelector(".contb") || $app.querySelector(".epb")); return; }
+        if (data) { if (!back) season = null; draw(); if (back) restore(self, ".vplay"); else focusEl(playB); return; }
+        focusEl(playB);
         busy(true);
-        api("get_series_info", "&series_id=" + it.series_id).then(function (d) { busy(false); data = d || {}; draw(); focusEl($app.querySelector(".contb") || $app.querySelector(".epb") || $app.querySelector(".btn-fav")); },
-          function (e) { busy(false); toast("Erro: " + e.message); });
+        api("get_series_info", "&series_id=" + it.series_id).then(function (d) {
+          busy(false); data = d || {};
+          if (current !== self) return;
+          var hadPlot = !!(it.plot || it.cover); if (!hadPlot) { self.render(); return; }
+          draw();
+        }, function (e) { busy(false); toast("Erro: " + e.message); });
       }
     };
   }
@@ -987,7 +1050,7 @@
       if (!list.length) { toast("Canal do jogo não encontrado. Abrindo canais de esporte..."); openSportsChannels(); return; }
       var c0 = list[0];
       addHist({ k: "l" + c0.stream_id, type: "live", name: c0.name, img: c0.stream_icon, id: c0.stream_id });
-      play(list.map(function (c) { return streamUrl("live", c.stream_id, liveExt()); }), list.map(function (c) { return c.name; }), 0, true);
+      playLive(list, 0);
       if (list.length > 1) setTimeout(function () { toast("Não é o jogo? Use ▲ ▼ no player para trocar de canal", 5000); }, 800);
     }, function () { busy(false); openSportsChannels(); });
   }
@@ -1146,7 +1209,7 @@
         var c = $app.querySelectorAll(".card");
         for (var i = 0; i < c.length; i++) c[i].onclick = function () {
           var x = history[Number(this.getAttribute("data-i"))];
-          if (x.type === "live") play([streamUrl("live", x.id, liveExt())], [x.name], 0, true); else openItem(x.type, x.it);
+          if (x.type === "live") playLive([{ stream_id: x.id, name: x.name, stream_icon: x.img }], 0); else openItem(x.type, x.it);
         };
         focusFirst(".card");
       }
