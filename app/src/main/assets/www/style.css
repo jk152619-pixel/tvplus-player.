@@ -342,3 +342,39 @@ body.phone .prow .c1 { overflow: visible; white-space: normal; }
 .contb:focus { background: var(--red); } .contb:focus b { color: #fff; }
 .epb.cur { background: rgba(247,191,26,.12); }
 .epb em { font-style: normal; font-size: 14px; color: var(--gold); margin-left: 10px; } .epb:focus em { color: #fff; }
+
+/* ===== Banner do Início: imagem inteira (sem cortar), com o fundo desfocado preenchendo as laterais ===== */
+.bblur { position: absolute; inset: -30px; background-size: cover; background-position: center; filter: blur(22px) brightness(.45); transform: scale(1.1); }
+.bimg { background-size: contain; background-repeat: no-repeat; background-position: right center; }
+.banner .bimg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(12,12,16,.55), transparent 45%); }
+
+/* ===== Atalhos das plataformas: todos cabem na tela (o tamanho é ajustado pelo app) ===== */
+.plats { overflow: visible; justify-content: center; flex-wrap: nowrap; }
+.plat { padding: 4px; line-height: 1.05; letter-spacing: 0; word-break: normal; overflow-wrap: normal; }
+
+/* ===== Detalhes de filme / série (modelo P2P) ===== */
+.vd { flex: 1; min-height: 0; display: flex; padding: 0; overflow: hidden; background: #121318; }
+.vdbg { position: absolute; top: 0; right: 0; bottom: 0; width: 70%; background-size: cover; background-position: center; opacity: .22; }
+.vdshade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, #121318 30%, rgba(18,19,24,.7) 60%, rgba(18,19,24,.85)); }
+.vdpost { position: relative; width: 34%; max-width: 330px; flex: none; background: #1d1e24 center/cover no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, #000 72%, transparent); mask-image: linear-gradient(90deg, #000 72%, transparent); }
+.vdinfo { position: relative; flex: 1; min-width: 0; padding: 30px 34px 20px 30px; overflow-y: auto; display: flex; flex-direction: column; }
+.vdinfo > * { flex: none; }
+.vdinfo h1 { font-size: 34px; font-weight: 900; line-height: 1.1; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.7); margin-bottom: 10px; }
+.vmeta { display: flex; align-items: center; gap: 12px; font-size: 19px; margin-bottom: 14px; min-height: 22px; }
+.vmeta .vr { color: var(--gold); font-weight: 700; } .vmeta .vy { color: var(--gold2); } .vmeta .vg { color: #aeb0b8; }
+.vsep { font-style: normal; color: #55575f; }
+.vplot { color: #d6d7dc; font-size: 16px; line-height: 1.45; max-width: 760px; max-height: 5.9em; overflow: hidden; margin-bottom: 20px; }
+.vbtns { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.vbtn { display: flex; align-items: center; justify-content: center; min-width: 170px; padding: 13px 26px; border-radius: 6px; font-size: 19px; font-weight: 600; background: #3a3b42; color: #fff; border: 2px solid transparent; }
+.vbtn.vplay { background: var(--red); }
+.vbtn.vfav.on { color: var(--gold); }
+.vbtn:focus { background: var(--gold); color: #15161b; border-color: #fff; transform: scale(1.06); box-shadow: 0 0 18px rgba(247,191,26,.55); }
+.vseas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.vsea { padding: 7px 16px; border-radius: 20px; font-size: 16px; color: #d6d7dc; background: rgba(255,255,255,.08); border: 2px solid transparent; }
+.vsea.on { background: var(--red); color: #fff; font-weight: 700; }
+.vsea:focus { background: var(--gold); color: #15161b; }
+.veps { display: flex; flex-wrap: wrap; gap: 12px; padding-bottom: 10px; }
+.vep { min-width: 128px; padding: 14px 18px; border-radius: 6px; background: #3a3b42; color: #fff; font-size: 18px; text-align: center; border: 2px solid transparent; }
+.vep.cur { border-color: var(--gold); color: var(--gold); }
+.vep:focus { background: var(--red); color: #fff; border-color: var(--gold); transform: scale(1.07); }
