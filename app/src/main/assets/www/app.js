@@ -559,11 +559,17 @@
   function fitPlats() {
     var box = $app.querySelector(".plats"); if (!box) return;
     var b = box.querySelectorAll(".plat"), n = b.length; if (!n) return;
-    var W = box.clientWidth - 56, max = 100, minGap = 12;
+    var W = box.clientWidth - 40, max = 104, minGap = 8;
     var size = Math.max(44, Math.min(max, Math.floor((W - minGap * (n - 1)) / n)));
     var gap = n > 1 ? Math.max(minGap, Math.min(26, Math.floor((W - size * n) / (n - 1)))) : 0;
     box.style.gap = gap + "px";
-    for (var i = 0; i < n; i++) { b[i].style.width = b[i].style.height = size + "px"; b[i].style.fontSize = Math.max(8, Math.round(size * 0.12)) + "px"; }
+    for (var i = 0; i < n; i++) {
+      // nome o maior possível: quebra nos espaços e só diminui se a palavra mais comprida não couber
+      var words = (b[i].textContent || "").split(/\s+/), longest = 1;
+      for (var w = 0; w < words.length; w++) longest = Math.max(longest, words[w].length);
+      var fs = Math.min(size * 0.22, (size * 0.86) / (longest * 0.6));
+      b[i].style.width = b[i].style.height = size + "px"; b[i].style.fontSize = Math.max(11, Math.round(fs)) + "px";
+    }
   }
   window.addEventListener("resize", function () { setTimeout(fitPlats, 50); });
 
@@ -575,16 +581,29 @@
         var self = this;
         $app.innerHTML = frame("home",
           '<div class="hhead"><img class="hlogo" src="logo.png" alt=""><span>' + ICON.user + " " + esc(creds.user) + '</span><span>' + ICON.calsm + " " + esc(fmtDate(account && account.exp_date)) + '</span><span class="clock">' + clock() + "</span></div>" +
-          '<button class="banner focusable" data-k="banner"><div class="bblur"></div><div class="bimg"></div><div class="btxt"><b>TVPlus+</b><small>Carregando destaques...</small></div><div class="dots"></div></button>' +
+          '<button class="banner focusable" data-k="banner"><div class="bimg"></div><div class="btxt"><b>TVPlus+</b><small>Carregando destaques...</small><p class="bplot"></p></div><div class="dots"></div></button>' +
           '<div class="plats"></div>' + payFoot());
         bindRail("home");
         var pf = $app.querySelector(".payfoot"); if (pf) pf.onclick = function () { go(pixScreen()); };
         var slides = [], si = 0;
-        var bimg = $app.querySelector(".bimg"), bblur = $app.querySelector(".bblur"), bt = $app.querySelector(".btxt b"), bs = $app.querySelector(".btxt small"), dots = $app.querySelector(".dots");
+        var bimg = $app.querySelector(".bimg"), bt = $app.querySelector(".btxt b"), bs = $app.querySelector(".btxt small"), bp = $app.querySelector(".bplot"), dots = $app.querySelector(".dots");
+        // Banner: imagem inteira do lado direito (no formato 16:9), título e resumo do lado esquerdo
+        function sizeBanner() {
+          var bn = $app.querySelector(".banner"); if (!bn || !bimg) return;
+          bimg.style.width = Math.round(Math.min(bn.clientWidth * 0.72, bn.clientHeight * 16 / 9)) + "px";
+        }
+        var preloaded = {};
+        function preload(x) { if (x && x.img && !preloaded[x.img]) { preloaded[x.img] = 1; var im = new Image(); im.src = x.img; } }
         function slide() {
           if (!slides.length || !document.body.contains(bimg)) return;
           var n = si % slides.length, s = slides[n]; si++;
-          bimg.style.backgroundImage = bblur.style.backgroundImage = "url('" + s.img.replace(/'/g, "%27") + "')"; bt.textContent = s.name; bs.textContent = s.type === "series" ? "Série · OK para abrir" : "Filme · OK para assistir";
+          sizeBanner();
+          bimg.style.backgroundImage = "url('" + s.img.replace(/'/g, "%27") + "')";
+          bimg.style.backgroundSize = s.type === "series" ? "cover" : "contain";
+          bimg.className = "bimg"; void bimg.offsetWidth; bimg.className = "bimg fadein";
+          preload(slides[(n + 1) % slides.length]);
+          bt.textContent = s.name; bs.textContent = s.type === "series" ? "Série · OK para abrir" : "Filme · OK para assistir";
+          bp.textContent = (s.it && s.it.plot) || "";
           dots.innerHTML = slides.map(function (x, i) { return "<i" + (i === n ? ' class="on"' : "") + "></i>"; }).join("");
           $app.querySelector(".banner").onclick = function () { openItem(s.type, s.it); };
         }
@@ -599,7 +618,7 @@
         function startSlides() {
           if (!slides.length) { bs.textContent = "OK para abrir Filmes e Séries"; return; }
           slide();
-          if (!started) { started = true; tmr = setInterval(function () { if (!document.body.contains(bimg)) clearInterval(tmr); else slide(); }, 7000); }
+          if (!started) { started = true; tmr = setInterval(function () { if (!document.body.contains(bimg)) clearInterval(tmr); else slide(); }, 5000); }
         }
         if (hc && hc.u === creds.user && hc.slides && hc.slides.length) {
           slides = hc.slides; startSlides(); drawPlats(hc.plats || []);
